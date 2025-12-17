@@ -24,6 +24,123 @@
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
+;; ┌─────────┐
+;; │ Summary │
+;; └─────────┘
+;; This package implements a Spaced Repetition System (SRS) for
+;; creating and reviewing flashcards. Flashcards can be embedded among
+;; your notes, or any text file, so long as you tell `flashcard.el'
+;; where to look for them--by setting `flashcard-path-list'. The
+;; intent is that creating flashcards should be as frictionless as
+;; possible. You may be in the midst of writing down some notes, and
+;; decide that a question and answer you have posed to yourself is
+;; worth remembering. Put your cursor over the question, run
+;;   M-x flashcard-make-at-point
+;; and resume whatever you were doing.
+
+;; ┌──────────┐
+;; │ Features │
+;; └──────────┘
+;; - Flashcards can be embedded your notes.
+;; - Minimal syntax compatible with most file types.
+;; - No databases--flashcards and metadata are stored in text files.
+;; - Implements Free Spaced Repetition Scheduler (FSRS) algorithm.
+;;   https://github.com/open-spaced-repetition/fsrs4anki/wiki/ABC-of-FSRS
+;; - No external dependencies
+
+;; ┌──────────────┐
+;; │ Installation │
+;; └──────────────┘
+;; Example Elpaca + use-package instalation
+;;
+;;  (use-package flashcard
+;;    :ensure (:host github :repo "Duncan-Britt/flashcard.el")
+;;    :config
+;;    (add-to-list 'flashcard-path-list (expand-file-name "~/Dropbox/notes/*.org")))
+
+;; ┌────────────────────────────┐
+;; │ Usage -- Making Flashcards │
+;; └────────────────────────────┘
+;; You can embed flashcards in any text file. A typical flashcard
+;; looks like this:
+;; ┌──────────────────────────────────────────┐
+;; │ in some text file...                     │
+;; │                                          │
+;; │ FC: 1F933760-D6B3-4A59-A9E2-09EC19A500CB │
+;; │ What is the powerhouse of the cell?      │
+;; │                                          │
+;; │ Mitochondria.                            │
+;; │                                          │
+;; │ file continues...                        │
+;; └──────────────────────────────────────────┘
+;; The empty line between the question and answer marks the end of the
+;; question, and the empty line after the answer marks the end of the
+;; answer.
+
+;; This is a "cloze" (fill in the blank) flashcard:
+;; ┌─────────────────────────────────────────────────────┐
+;; │ ...whatever comes before                            │
+;; │                                                     │
+;; │ FC: 4D55B42A-1389-45CF-B242-E8EBFE7E0784            │
+;; │ The {{mitochondria}} is the powerhouse of the cell. │
+;; │                                                     │
+;; │ rest of the file...                                 │
+;; └─────────────────────────────────────────────────────┘
+;; Again, the empty line afterward marks the end of the flashcard.
+
+;; To create flash cards like the above, first write your question and
+;; answer, or cloze statement:
+;; ┌─────────────────────────────────────┐
+;; │ ...                                 │
+;; │ What is the powerhouse of the cell? │
+;; │                                     │
+;; │ Mitochondria.                       │
+;; │                                     │
+;; │ ...                                 │
+;; └─────────────────────────────────────┘
+
+;; Then, with your cursor on the question, invoke
+;; ┌─────────────────────────────┐
+;; │ M-x flashcard-make-at-point │
+;; └─────────────────────────────┘
+;; Now you should see an id
+;; ┌──────────────────────────────────────────┐
+;; │ ...                                      │
+;; │ FC: 1F933760-D6B3-4A59-A9E2-09EC19A500CB │
+;; │ What is the powerhouse of the cell?      │
+;; │                                          │
+;; │ Mitochondria.                            │
+;; │ ...                                      │
+;; └──────────────────────────────────────────┘
+
+;; The flash card is made. The metadata associated with the flashcard
+;; is saved in `flashcard-history-file' (by default,
+;; "<user-emacs-directory>/flashcard-history.org").
+
+;; BUT--in order to drill your newly created flashcard, make sure the
+;; file in which you wrote your flashcard is among those specified by
+;; `flashcard-path-list'. This is how `flashcard.el' knows where to
+;; look for flashcards.
+
+;; Some examples:
+;; (add-to-list 'flashcard-path-list (expand-file-name "~/path/to/your/notes/*"))
+;; (add-to-list 'flashcard-path-list (expand-file-name "~/only/org/files/*.org"))
+;; (add-to-list 'flashcard-path-list (expand-file-name "~/a/specific/file.txt"))
+;; (add-to-list 'flashcard-path-list (expand-file-name "~/even/source/code.el"))
+
+;; ┌───────────────────────────────┐
+;; │ Usage -- Reviewing Flashcards │
+;; └───────────────────────────────┘
+;;  M-x flashcard-drill
+;;
+;; This is how you can review flashcards which are "due".
+
+;; ┌─────────────────────────────┐
+;; │ Usage -- Editing Flashcards │
+;; └─────────────────────────────┘
+;; Just revise the text of your card where you wrote it. You don't
+;; need to run any additional commands. As long as the id is still
+;; present above your card, all is well.
 
 ;;; Code:
 (require 'flashcard-fsrs)
@@ -64,9 +181,7 @@ Essential for effective spaced repetition.")
 (defvar-local flashcard--current-type nil)
 (defvar-local flashcard--answer nil)
 
-;; ┌──────────┐
-;; │ Commands │
-;; └──────────┘
+;; ========
 (defun flashcard-make-at-point ()
   "Make flashcard starting from paragraph(s) at point.
 
@@ -84,29 +199,6 @@ before question, and inserts flashcard into persistant storage."
     (let ((flashcard-id (flashcard--store-new)))
       (insert flashcard-id)
       (message "Created new flashcard: %s" flashcard-id))))
-
-;; FC: 1F933760-D6B3-4A59-A9E2-09EC19A500CB
-;; What is the powerhouse of the cell?
-
-;; Mitochondria.
-
-;; FC: 4D55B42A-1389-45CF-B242-E8EBFE7E0784
-;; The {{mitochondria}} is the powerhouse of the cell.
-
-;; ==========================
-
-
-
-
-;; (replace-regexp-in-string
-;;  "{{[^}]*}}"
-;;  "[...]"
-;;  ";; The {{mitochondria}} is the powerhouse of the cell.")
-
-;; (replace-regexp-in-string
-;;  "{{\\([^}]*\\)}}"
-;;  "\\1"
-;;  ";; The {{mitochondria}} is the powerhouse of the cell.")
 
 (defvar flashcard--review-queue nil
   "Queue of flashcards to review.")
@@ -260,9 +352,10 @@ FSRS algorithm."
                                                                      (flashcard--days-til-next-review 0.9
                                                                                              initial-stability))))
               (list initial-stability initial-difficulty )))
+          (save-buffer)
           (message "Updated flashcard: %s" id))))))
 
-(flashcard--update-review-history "1F933760-D6B3-4A59-A9E2-09EC19A500CB" :forgot)
+;; (flashcard--update-review-history "1F933760-D6B3-4A59-A9E2-09EC19A500CB" :forgot)
 
 (defun flashcard--days-since-timestamp (timestamp)
   "Days (float) since TIMESTAMP."
@@ -270,28 +363,23 @@ FSRS algorithm."
     (/ (float-time (time-subtract (current-time) time))
        86400.0)))
 
-(flashcard--days-since-timestamp "2025-12-10T20:19:18-0700")
+;; (flashcard--days-since-timestamp "2025-12-10T20:19:18-0700")
 
 (defun flashcard--time-add-days (time days)
   "Add DAYS (a decimal number) to TIME."
   (time-add time (seconds-to-time (* days 86400))))
 
-(encode-time (parse-time-string "2025-12-16T20:19:18-0700"))
+;; (encode-time (parse-time-string "2025-12-16T20:19:18-0700"))
 
 
-;; Example: Add 0.4 days to current time
-(format-time-string "%Y-%m-%dT%H:%M:%S%z")
-"2025-12-16T20:19:18-0700"
-(format-time-string "%Y-%m-%dT%H:%M:%S%z" (flashcard--time-add-days (current-time) 0.4))
-"2025-12-17T05:55:28-0700"
+;; (format-time-string "%Y-%m-%dT%H:%M:%S%z")
+;; "2025-12-16T20:19:18-0700"
+;; (format-time-string "%Y-%m-%dT%H:%M:%S%z" (flashcard--time-add-days (current-time) 0.4))
+;; "2025-12-17T05:55:28-0700"
 
-
-
-(let ((initial-stability (flashcard--stability-initial :forgot))
-      (initial-difficulty (flashcard--difficulty-initial :forgot)))
-  (list initial-stability initial-difficulty (flashcard--days-til-next-review 0.9 initial-stability)))
-
-;; ==========================
+;; (let ((initial-stability (flashcard--stability-initial :forgot))
+;;       (initial-difficulty (flashcard--difficulty-initial :forgot)))
+;;   (list initial-stability initial-difficulty (flashcard--days-til-next-review 0.9 initial-stability)))
 
 ;; (pcase-let ((`(1 ,x) '(2 2)))
 ;;   x)
@@ -337,6 +425,7 @@ Each location is a plist: (:file FILE :line LINE :text TEXT)."
 ;; (org-entry-get (point) "created")
 
 ;; (flashcard--due-ripgrep)
+;; (flashcard--search-ripgrep)
 
 (defconst +flashcard--id-regexp+ "[0-9A-F]\\{8\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{12\\}")
 
@@ -434,19 +523,26 @@ Uses native Emacs search through files."
 
 (defun flashcard--parse-question-or-cloze-str-at-point ()
   "Return `(question ,question ,answer) or `(cloze ,cloze).
-Look ahead to find question beginning at nearest nonwhitespace character."
+  Look ahead to find question beginning at nearest nonwhitespace character."
   (save-excursion
     (skip-chars-forward " \t\n\r\f")
-    (pcase-let* ((begin-question (point))
-                 (`(_ . ,end-question) (bounds-of-thing-at-point 'paragraph))
-                 (question-or-cloze-str (buffer-substring-no-properties begin-question end-question)))
-      (if (string-match-p "{{\\([^}]*\\|[^}]*}[^}]*\\)}}" question-or-cloze-str)
-          (list 'cloze question-or-cloze-str)
-        (goto-char end-question)
-        (skip-chars-forward " \t\n\r\f")
-        (let ((answer (pcase-let ((`(,a . ,b) (bounds-of-thing-at-point 'paragraph)))
-                        (buffer-substring-no-properties a b))))
-          (list 'question question-or-cloze-str answer))))))
+    (let ((begin-question (point)))
+      ;; Find end of question (empty line or EOF)
+      (let ((end-question (progn
+                            (re-search-forward "\n[ \t]*\n\\|\\'")
+                            (match-beginning 0))))
+        (let ((question-or-cloze-str (buffer-substring-no-properties begin-question end-question)))
+          (if (string-match-p "{{\\([^}]*\\|[^}]*}[^}]*\\)}}" question-or-cloze-str)
+              (list 'cloze question-or-cloze-str)
+            ;; For question/answer cards, find answer
+            (goto-char end-question)
+            (skip-chars-forward " \t\n\r\f")
+            (let ((begin-answer (point)))
+              ;; Find end of answer (empty line or EOF)
+              (re-search-forward "\n[ \t]*\n\\|\\'")
+              (let* ((end-answer (match-beginning 0))
+                     (answer (buffer-substring-no-properties begin-answer end-answer)))
+                (list 'question question-or-cloze-str answer)))))))))
 
 (defun flashcard--mappend (fn the-list)
   "Apply fn to each element of list and append the results."

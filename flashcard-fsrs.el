@@ -55,15 +55,6 @@
                           1.01925 1.9395 0.11 0.29605 2.2698 0.2315 2.9898 0.51655 0.6621])
 (defmacro flashcard--w (i) `(aref ,+flashcard-W+ ,i))
 
-;; ┌──────────┐
-;; │ "Export" │
-;; └──────────┘
-(defun flashcard--fsrs-update (difficulty stability retrievability grade)
-  "Update card metadata relevant for FSRS after review based on grade.
-Returns updated metadata as (DIFFICULTY STABILITY RETRIEVABILITY).
-TODO"
-  )
-
 ;; ┌──────────────────────┐
 ;; │ Days til next review │
 ;; └──────────────────────┘
@@ -87,7 +78,6 @@ retrievability."
            (* +flashcard-F+ (/ days-since-last-review
                         stability-of-card)) )
         +flashcard-C+))
-
 
 ;; ┌───────────┐
 ;; │ Stability │
