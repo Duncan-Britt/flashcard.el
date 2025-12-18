@@ -143,6 +143,7 @@
 ;; present above your card, all is well.
 
 ;;; Code:
+(require 'transient)
 (require 'flashcard-fsrs)
 ;; ┌────────┐
 ;; │ Custom │
@@ -159,7 +160,7 @@
     - notes/**/*.org -- includes org files within notes or any subdirectories"
   :group 'flashcard)
 ;; In user config:
-;; (add-to-list 'flashcard-path-list (expand-file-name "~/Dropbox/notes/*.org"))
+;; (add-to-list 'flashcard-path-list (expand-file-name "~/notes/*.org"))
 ;; (add-to-list 'flashcard-path-list (expand-file-name "./flashcard.el"))
 
 (defcustom flashcard-designator "FC:"
@@ -182,6 +183,59 @@ Essential for effective spaced repetition.")
 (defvar-local flashcard--answer nil)
 
 ;; ========
+
+;; So, about to make a flashcard.
+
+;; FC: B426A6EC-91E5-4EA6-865A-91F7973706B8
+;; What's did I just do?
+
+;; Warn if not in path list.
+
+(defcustom flashcard-indicator-duration 1.0
+  "Seconds to display success indicator.")
+
+(defun flashcard--show-indicator (position)
+  "Display success indicator overlay at POSITION.
+
+Shows checkmark for `flashcard-indicator-duration' seconds.
+Displays fetch timestamp in echo area if available.
+
+Reuses existing indicator overlay if present, extending its timer.
+This prevents overlay accumulation during rapid refreshes.
+
+Called by `flashcard-make-at-point'."
+  (when (> flashcard-indicator-duration 0)
+    (let* ((beg position)
+           (end (save-excursion
+                  (goto-char beg)
+                  (line-end-position)))
+           ;; Check for existing indicator overlay
+           (existing-ov
+            (seq-find
+             (lambda (ov)
+               (overlay-get ov 'flashcard-indicator))
+             (overlays-in beg end)))
+           (ov (or existing-ov (make-overlay beg end))))
+
+      ;; Cancel existing timer if overlay was reused
+      (when existing-ov
+        (when-let ((timer (overlay-get ov 'flashcard-timer)))
+          (cancel-timer timer)))
+
+      ;; Set overlay properties (idempotent if reusing)
+      (overlay-put ov 'before-string
+                   (propertize "☑ " 'face '(:foreground "green" :weight bold)))
+      (overlay-put ov 'flashcard-indicator t)
+
+      ;; Create new timer and store it on overlay
+      (let ((timer (run-at-time flashcard-indicator-duration
+                                nil
+                                (lambda (overlay)
+                                  (when (overlay-buffer overlay)
+                                    (delete-overlay overlay)))
+                                ov)))
+        (overlay-put ov 'flashcard-timer timer)))))
+
 (defun flashcard-make-at-point ()
   "Make flashcard starting from paragraph(s) at point.
 
@@ -198,14 +252,24 @@ before question, and inserts flashcard into persistant storage."
     (insert " ")
     (let ((flashcard-id (flashcard--store-new)))
       (insert flashcard-id)
-      (message "Created new flashcard: %s" flashcard-id))))
+      (move-beginning-of-line 1)
+      (flashcard--show-indicator (point))
+      (save-buffer)
+      (message "Created new flashcard: %s" flashcard-id))
+    (unless (member buffer-file-name (flashcard--get-all-flashcard-file-paths))
+      (display-warning 'flashcard
+                       (format "Created flashcard in file not found among `flashcard-path-list'.\nUse (add-to-list 'flashcard-path-list \"%s\")" buffer-file-name)
+                       :warning))))
 
 (defvar flashcard--review-queue nil
   "Queue of flashcards to review.")
 
+(defvar flashcard--window-config-before-drill)
+
 (defun flashcard-drill ()
   "Drill flashcards."
   (interactive)
+  (setq flashcard--window-config-before-drill (current-window-configuration))
   (setq flashcard--review-queue (flashcard--due-for-review))
   (if flashcard--review-queue
       (flashcard--drill-next-card)
@@ -231,6 +295,17 @@ TYPE is either 'HIDE or 'REVEAL."
                                        "\\1"
                                        cloze-str)))))
 
+;; FC: 5C032AFC-F05E-4775-9934-7D6D7A84F0A5
+;; This is a {{flashcard}}.
+
+;; FC: A683C1C9-15DD-40FD-971E-DBBC26189C0F
+;; This is another one?
+
+;; Yes it is
+
+(defvar flashcard--current-file nil)
+(defvar flashcard--current-line nil)
+
 (defun flashcard--drill-card (card)
   "Drill card."
   (delete-other-windows)
@@ -239,60 +314,95 @@ TYPE is either 'HIDE or 'REVEAL."
     (switch-to-buffer buffer)
     (erase-buffer)
     (pcase card
-      (`(,id ,mode cloze ,cloze)
+      (`(,id ,file ,line ,mode cloze ,cloze)
        (funcall mode)
-       (flashcard-show-question-mode)
+       (flashcard--question-menu)
        (setq-local flashcard--current-id id)
+       (setq flashcard--current-file file)
+       (setq flashcard--current-line line)
        (setq-local flashcard--current-type 'cloze)
        (setq-local flashcard--current-cloze cloze)
-       (insert (concat (substitute-command-keys
-                        "\\[flashcard-quit-review]")
-                       (propertize " ⇒ Quit  " 'face 'shadow)
-                       (substitute-command-keys
-                        "\\[flashcard-show-answer]")
-                       (propertize " ⇒ Reveal answer\n\n" 'face 'shadow)))
        (flashcard--insert-cloze cloze 'hide))
-      (`(,id ,mode question ,question ,answer)
+      (`(,id ,file ,line ,mode question ,question ,answer)
        (funcall mode)
-       (flashcard-show-question-mode)
+       (flashcard--question-menu)
        (setq-local flashcard--answer answer)
        (setq-local flashcard--current-id id)
+       (setq flashcard--current-file file)
+       (setq flashcard--current-line line)
        (setq-local flashcard--current-type 'question)
-       (insert (concat (substitute-command-keys
-                        "\\[flashcard-quit-review]")
-                       (propertize " ⇒ Quit  " 'face 'shadow)
-                       (substitute-command-keys
-                        "\\[flashcard-show-answer]")
-                       (propertize " ⇒ Reveal answer\n\n" 'face 'shadow)))
        (insert question))
       (_ (error "Unrecognized flashcard format: %s" card)))))
 
-(define-minor-mode flashcard-show-question-mode
-  "Mode for showing flashcard questions."
-  :keymap (let ((map (make-sparse-keymap)))
-            (define-key map (kbd "SPC") 'flashcard-show-answer)
-            (define-key map (kbd "q") 'flashcard-quit-review)
-            map))
+;; (defun flashcard-rate ()
+;;   "Rate the current flashcard using keyword completion."
+;;   (interactive)
+;;   (let* ((choices '(("easy" . :easy) ("good" . :good) ("hard" . :hard) ("forgot" . :forgot)))
+;;          (choice (completing-read "Rate this card (easy/good/hard/forgot): "
+;;                                   (mapcar #'car choices) nil t))
+;;          (rating (alist-get choice choices nil nil #'string=)))
+;;     (when rating
+;;       (flashcard--update-review-history flashcard--current-id rating)
+;;       (if flashcard--review-queue
+;;         (flashcard--drill-next-card)
+;;         (flashcard-quit-review)))))
 
-(defun flashcard-rate ()
-  "Rate the current flashcard using keyword completion."
-  (interactive)
-  (let* ((choices '(("easy" . :easy) ("good" . :good) ("hard" . :hard) ("forgot" . :forgot)))
-         (choice (completing-read "Rate this card (easy/good/hard/forgot): "
-                                  (mapcar #'car choices) nil t))
-         (rating (alist-get choice choices nil nil #'string=)))
-    (when rating
-      (flashcard--update-review-history flashcard--current-id rating)
-      (if flashcard--review-queue
+;; (defun flashcard--rate-easy ()
+;;   "Rate the current flashcard easy."
+;;   (interactive)
+;;   (flashcard--update-review-history flashcard--current-id :easy)
+;;   (if flashcard--review-queue
+;;       (flashcard--drill-next-card)
+;;     (flashcard-quit-review)))
+
+(transient-define-suffix flashcard-rate (&optional args)
+  "Rate the just-revealed card from transient menu.
+Then continue."
+  (interactive (list (transient-args transient-current-command)))
+  (let ((grade (pcase (this-command-keys)
+                 ("e" :easy)
+                 ("g" :good)
+                 ("h" :hard)
+                 ("f" :forgot))))
+    (flashcard--update-review-history flashcard--current-id grade)
+    (if (and flashcard--review-queue
+             (not (transient-arg-value "--visit-source" args)))
         (flashcard--drill-next-card)
-        (flashcard-quit-review)))))
+      (flashcard-quit-review)
+      (flashcard--visit-source))))
+
+(defun flashcard--visit-source ()
+  "Visit source file of current flashcard."
+  (find-file flashcard--current-file)
+  (goto-line flashcard--current-line))
+
+(transient-define-suffix flashcard--quit-review-suffix (&optional args)
+  "Quit flashcard review from transient menu."
+  (interactive (list (transient-args transient-current-command)))
+  (flashcard-quit-review)
+  (when (transient-arg-value "--visit-source" args)
+    (flashcard--visit-source)))
+
+(transient-define-prefix flashcard--rate-menu ()
+  "Menu for flashcards once revealed."
+  :refresh-suffixes t
+  [["Rating"
+    ("e" "Easy" flashcard-rate)
+    ("g" "Good" flashcard-rate)
+    ("h" "Hard" flashcard-rate)
+    ("f" "Forgot" flashcard-rate)]
+   ["Abort"
+    ("q" "Quit without rating card" flashcard--quit-review-suffix)]]
+  ["After rating or abort"
+    ("-s" "Visit source (quit drilling)" "--visit-source")])
 
 (defun flashcard-quit-review ()
   "Quit the current review session."
   (interactive)
   (kill-buffer "*flashcard*")
   (when (get-buffer-window "*flashcard*")
-    (delete-window (get-buffer-window "*flashcard*"))))
+    (delete-window (get-buffer-window "*flashcard*")))
+  (set-window-configuration flashcard--window-config-before-drill))
 
 (defun flashcard-show-answer ()
   "Reveal the answer to the current flashcard."
@@ -304,7 +414,7 @@ TYPE is either 'HIDE or 'REVEAL."
    ((eq flashcard--current-type 'question)
     (insert "\n\n---\n\n")
     (insert flashcard--answer)))
-  (flashcard-rate))
+  (flashcard--rate-menu))
 
 ;; (pcase-let ((`(,id ,type . ,content) '("1F933760-D6B3-4A59-A9E2-09EC19A500CB" question
 ;;                                        ";; What is the powerhouse of the cell?\n" "\n;; Mitochondria.\n")))
@@ -318,8 +428,10 @@ TYPE is either 'HIDE or 'REVEAL."
 GRADE is used to calculate the next review deadline according to the
 FSRS algorithm."
   (save-excursion
-    (pcase-let ((`(,history-file . ,position) (org-id-find id)))
-      (with-current-buffer (find-file-noselect history-file)
+    (pcase-let* ((`(,history-file . ,position) (org-id-find id))
+                 (buffer (find-file-noselect history-file)))
+      (with-current-buffer buffer
+        (org-mode)
         (let ((difficulty-str (org-entry-get position "difficulty"))
               (stability-str (org-entry-get position "stability"))
               (last-review-timestamp (org-entry-get position "last-review-timestamp"))
@@ -352,8 +464,8 @@ FSRS algorithm."
                                                                      (flashcard--days-til-next-review 0.9
                                                                                              initial-stability))))
               (list initial-stability initial-difficulty )))
-          (save-buffer)
-          (message "Updated flashcard: %s" id))))))
+          (save-buffer)))
+      (kill-buffer buffer))))
 
 ;; (flashcard--update-review-history "1F933760-D6B3-4A59-A9E2-09EC19A500CB" :forgot)
 
@@ -393,10 +505,12 @@ Each location is a plist: (:file FILE :line LINE :text TEXT)."
   (cond
    ((and (fboundp 'rg) (executable-find "rg"))
     (flashcard--due-ripgrep))
-   ;; ((fboundp 'rgrep) TODO
-   ;;  (flashcard--due-grep))
+   ((executable-find "grep")
+    (flashcard--due-grep))
    (t
     (flashcard--due-native))))
+
+;; (flashcard--due-grep)
 
 (defun flashcard--due-ripgrep ()
   "Helper for `flashcard--due-for-review' using ripgrep."
@@ -407,14 +521,47 @@ Each location is a plist: (:file FILE :line LINE :text TEXT)."
         (pcase-let ((`(,file ,line ,id) location))
           (pcase-let ((`(,history-file . ,position) (org-id-find id)))
             ;; Only collect cards due for review
-            (when (with-current-buffer (find-file-noselect history-file)
+            (when (with-temp-buffer
+                    (org-mode)
+                    (insert-file-contents history-file)
                     (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
                       (time-less-p (encode-time (parse-time-string next-review-deadline-str))
                                    (current-time))))
-              (with-current-buffer (find-file-noselect file)
+              (with-temp-buffer
+                (insert-file-contents file)
+                (setq buffer-file-name file)
+                (set-auto-mode)
+                (set-buffer-modified-p nil)
                 (goto-line line)
                 (move-end-of-line 1)
-                (push (cons id (cons major-mode (flashcard--parse-question-or-cloze-str-at-point)))
+                (push (append (list id file line major-mode)
+                              (flashcard--parse-question-or-cloze-str-at-point))
+                      results)))))))))
+
+(defun flashcard--due-grep ()
+  "Helper for `flashcard--due-for-review' using grep."
+  (save-excursion
+    (let ((locations (flashcard--search-grep))
+          (results nil))
+      (dolist (location locations results)
+        (pcase-let ((`(,file ,line ,id) location))
+          (pcase-let ((`(,history-file . ,position) (org-id-find id)))
+            ;; Only collect cards due for review
+            (when (with-temp-buffer
+                    (org-mode)
+                    (insert-file-contents history-file)
+                    (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
+                      (time-less-p (encode-time (parse-time-string next-review-deadline-str))
+                                   (current-time))))
+              (with-temp-buffer
+                (insert-file-contents file)
+                (setq buffer-file-name file)
+                (set-auto-mode)
+                (set-buffer-modified-p nil)
+                (goto-line line)
+                (move-end-of-line 1)
+                (push (append (list id file line major-mode)
+                              (flashcard--parse-question-or-cloze-str-at-point))
                       results)))))))))
 
 
@@ -424,10 +571,41 @@ Each location is a plist: (:file FILE :line LINE :text TEXT)."
 
 ;; (org-entry-get (point) "created")
 
+
+;; FC: 4984EF94-32FB-4DFA-903E-A09B05DBDE5C
+;; Ok, new flashcard! What's going on?
+
+;; Nothing much!
+
 ;; (flashcard--due-ripgrep)
 ;; (flashcard--search-ripgrep)
 
 (defconst +flashcard--id-regexp+ "[0-9A-F]\\{8\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{12\\}")
+
+;; (flashcard--get-all-flashcard-file-paths)
+
+;; (flashcard--search-grep)
+
+(defun flashcard--search-grep ()
+  "Use grep to find flashcard locations."
+  (let ((files (flashcard--get-all-flashcard-file-paths))
+        (results))
+    (with-temp-buffer
+      (apply #'call-process "grep" nil t nil
+             "--with-filename" "-n" "-e" flashcard-designator
+             files)
+      (goto-char (point-min))
+      (thing-at-point 'number)
+
+      (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote flashcard-designator) "[[:space:]]*\\(" +flashcard--id-regexp+ "\\)\\s-*") nil t)
+        (let* ((file (match-string 1))
+               (line (string-to-number (match-string 2)))
+               (id (match-string 3)))
+          (push (list file
+                      line
+                      id)
+                results))))
+    (nreverse results)))
 
 (defun flashcard--search-ripgrep ()
   "Use ripgrep to find flashcard locations."
@@ -440,7 +618,7 @@ Each location is a plist: (:file FILE :line LINE :text TEXT)."
       (goto-char (point-min))
       (thing-at-point 'number)
 
-      (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote flashcard-designator) "[[:space:]]*\\(" +flashcard--id-regexp+ "\\)$") nil t)
+      (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote flashcard-designator) "[[:space:]]*\\(" +flashcard--id-regexp+ "\\)\\s-*") nil t)
         (let* ((file (match-string 1))
                (line (string-to-number (match-string 2)))
                (id (match-string 3)))
@@ -454,6 +632,18 @@ Each location is a plist: (:file FILE :line LINE :text TEXT)."
 ;;              "--with-filename" "-n" "-e" flashcard-designator
 ;;              (flashcard--get-all-flashcard-file-paths))
 
+;; (apply #'call-process "grep" nil t nil
+;;        "--with-filename" "-n" "-e" flashcard-designator
+;;        '("/Users/duncan/code/my-emacs-packages/flashcard/flashcard.el"))
+
+
+;; (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote flashcard-designator) "[[:space:]]*\\(" +flashcard--id-regexp+ "\\)$")
+
+
+
+;; (re-search-forward "^\\([^:]+\\):\\([^:]+\\):.*FC:[[:space:]]*\\([0-9A-F]\\{8\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{12\\}\\)\\s-*" nil t)
+
+
 
 (defun flashcard--id-at-point ()
   "Grab id from buffer at point if it matches UUID format."
@@ -465,6 +655,7 @@ Each location is a plist: (:file FILE :line LINE :text TEXT)."
     (when (string-match-p +flashcard--id-regexp+ id)
       id)))
 
+;; (flashcard--due-native)
 (defun flashcard--due-native ()
   "Gather cards due for review.
 
@@ -473,14 +664,21 @@ Uses native Emacs search through files."
     (let ((files (flashcard--get-all-flashcard-file-paths))
           results)
       (dolist (file files results)
-        (let ((saved-major-mode (with-current-buffer (find-file-noselect file)
-                                  major-mode)))
+        (let ((file-was-open-p (get-file-buffer file))
+              (buf (find-file-noselect file))
+              (saved-major-mode nil))
+          (unwind-protect
+              (with-current-buffer buf
+                (setq saved-major-mode major-mode))
+            (unless file-was-open-p
+              (kill-buffer buf)))
           (with-temp-buffer
             (insert-file-contents file)
             (goto-char (point-min))
             (while (re-search-forward (concat "^.*" (regexp-quote flashcard-designator)) nil t)
               (skip-chars-forward " \t\n\r\f")
-              (let ((id (flashcard--id-at-point)))
+              (let ((id (flashcard--id-at-point))
+                    (line (line-number-at-pos)))
                 (when id
                   (pcase-let ((`(,history-file . ,position) (org-id-find id)))
                     ;; Only collect cards due for review
@@ -489,7 +687,8 @@ Uses native Emacs search through files."
                               (time-less-p (encode-time (parse-time-string next-review-deadline-str))
                                            (current-time))))
                       (move-end-of-line 1)
-                      (push (cons id (cons saved-major-mode (flashcard--parse-question-or-cloze-str-at-point)))
+                      (push (append (list id file line saved-major-mode)
+                                    (flashcard--parse-question-or-cloze-str-at-point))
                             results))))))))))))
 ;; (flashcard--due-native)
 
@@ -497,17 +696,22 @@ Uses native Emacs search through files."
   "Store new flashcard in persistent storage."
   (save-excursion
     (write-region "\n* Card" nil flashcard-history-file t)
-    (with-current-buffer (find-file-noselect flashcard-history-file)
-      (goto-char (point-max))
-      (let ((flashcard-id (org-id-get-create))
-            (timestamp (format-time-string "%Y-%m-%dT%H:%M:%S%z")))
-        (org-set-property "created" timestamp)
-        (org-set-property "difficulty" "nil")
-        (org-set-property "stability" "nil")
-        (org-set-property "last-review-timestamp" "nil")
-        (org-set-property "next-review-deadline" timestamp)
-        (save-buffer)
-        flashcard-id))))
+    (let ((file-was-open-p (get-file-buffer flashcard-history-file))
+          (buf (find-file-noselect flashcard-history-file)))
+      (unwind-protect
+          (with-current-buffer buf
+            (goto-char (point-max))
+            (let ((flashcard-id (org-id-get-create))
+                  (timestamp (format-time-string "%Y-%m-%dT%H:%M:%S%z")))
+              (org-set-property "created" timestamp)
+              (org-set-property "difficulty" "nil")
+              (org-set-property "stability" "nil")
+              (org-set-property "last-review-timestamp" "nil")
+              (org-set-property "next-review-deadline" timestamp)
+              (save-buffer)
+              flashcard-id))
+        (unless file-was-open-p
+          (kill-buffer buf))))))
 
 ;; (flashcard--store-new)
 
@@ -550,7 +754,12 @@ Uses native Emacs search through files."
 
 (defun flashcard--get-all-flashcard-file-paths ()
   "Return list of file paths specified by flashcard-path-list."
-  (flashcard--mappend #'file-expand-wildcards flashcard-path-list))
+  (seq-filter #'file-regular-p
+              (flashcard--mappend #'file-expand-wildcards flashcard-path-list)))
+
+;; (flashcard--get-all-flashcard-file-paths)
+
+;; (file-expand-wildcards "/Users/duncan/Dropbox/notes/*.org")
 
 (defun flashcard--comment-marker ()
   "Return comment marker for the current mode, or \"\"."
@@ -562,6 +771,12 @@ Uses native Emacs search through files."
                    comment-start
                  (concat comment-start " "))))
     ""))
+
+(transient-define-prefix flashcard--question-menu ()
+  "Menu for displaying flashcards (before reveal)."
+  :refresh-suffixes t
+  [("r" "Reveal card" flashcard-show-answer)
+   ("q" "Quit drilling" flashcard-quit-review)])
 
 (provide 'flashcard)
 ;;; flashcard.el ends here
