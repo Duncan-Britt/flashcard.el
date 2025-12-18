@@ -262,6 +262,83 @@ before question, and inserts flashcard into persistant storage."
                        (format "Created flashcard in file not found among `flashcard-path-list'.\nUse (add-to-list 'flashcard-path-list \"%s\")" buffer-file-name)
                        :warning))))
 
+(defun flashcard-edit-tags-at-point ()
+  "Edit tags of flashcard at point."
+  (interactive)
+  (save-excursion
+    (let ((id nil)
+          (line-start (line-beginning-position))
+          (line-end (line-end-position))
+          (completed-p))
+      (goto-char line-start)
+      (if (re-search-forward (concat (regexp-quote flashcard-designator)
+                                     "[[:space:]]*\\("
+                                     flashcard--id-regexp
+                                     "\\)")
+                             line-end t)
+          (progn
+            (setq id (match-string 1))
+            (let ((history-entry (org-id-find id)))
+              (if history-entry
+                  (progn
+                    (pcase-let* ((`(,history-file . ,position) history-entry)
+                                 (file-was-open-p (get-file-buffer history-file))
+                                 (hist-buffer (find-file-noselect history-file)))
+                      (with-current-buffer hist-buffer
+                        (org-mode)
+                        (let* ((initial-tags-str (org-entry-get position "flashcard-tags"))
+                               (initial-tags (when initial-tags-str
+                                               (mapcar #'string-trim
+                                                       (split-string initial-tags-str "," t)))))
+                          (let* ((operation (completing-read (format "(Tags: %s)\nOperation: " (string-join initial-tags ", "))
+                                                             '("add" "remove" "replace") nil t))
+                                 (new-tags (pcase-exhaustive operation
+                                             ("add" (let ((available-tags (seq-difference (flashcard--all-known-tags)
+                                                                                          initial-tags #'string=)))
+                                                      (seq-uniq (append initial-tags
+                                                                        (completing-read-multiple
+                                                                         "Add tags: " available-tags)))))
+                                             ("remove" (seq-difference initial-tags (completing-read-multiple
+                                                                                     "Remove tags: " initial-tags nil t)))
+                                             ("replace" (completing-read-multiple
+                                                         "Replace with: " (flashcard--all-known-tags)))))
+                                 (tags-string (string-join new-tags ",")))
+                            (goto-char position)
+                            (org-set-property "flashcard-tags" tags-string)
+                            (save-buffer)
+                            (setq completed-p t))))
+                      (unless file-was-open-p
+                        (kill-buffer hist-buffer)))
+                    (when completed-p
+                      (move-beginning-of-line 1)
+                      (flashcard--show-indicator (point)))
+                    (message "Edited tags for flashcard: %s" id))
+                ;; else
+                (user-error "ID: %s not found in %s" id flashcard-history-file))))
+        ;; else
+        (user-error "No flashcard %s <ID> on this line." flashcard-designator)))))
+
+(defun flashcard--all-known-tags ()
+  "Return list of all unique tags used across all flashcards."
+  (let ((tags (make-hash-table :test 'equal))
+        (files (flashcard--get-all-flashcard-file-paths)))
+    (dolist (file files)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (while (re-search-forward (concat "^.*" (regexp-quote flashcard-designator)) nil t)
+          (skip-chars-forward " \t\n\r\f")
+          (let ((id (flashcard--id-at-point)))
+            (when id
+              (pcase-let ((`(,history-file . ,position) (org-id-find id)))
+                (with-current-buffer (find-file-noselect history-file)
+                  (let ((tags-str (org-entry-get position "flashcard-tags")))
+                    (when tags-str
+                      (dolist (tag (mapcar #'string-trim
+                                           (split-string tags-str "," t)))
+                        (puthash tag t tags)))))))))))
+    (hash-table-keys tags)))
+
 (defun flashcard-delete-at-point ()
   "Delete flashcard at point from file and `flashcard-history-file'."
   (interactive)
@@ -300,7 +377,7 @@ before question, and inserts flashcard into persistant storage."
                 (unless history-entry
                   (user-error "ID: %s not found in %s" id flashcard-history-file)))))
         ;; else
-        (user-error "No flashcard %s <ID> on this line.?" flashcard-designator)))))
+        (user-error "No flashcard %s <ID> on this line." flashcard-designator)))))
 
 (defun flashcard-review ()
   "Review flashcards which are due."
@@ -513,12 +590,12 @@ FSRS algorithm."
                      (difficulty (flashcard--difficulty difficulty-num grade))
                      (days-til-due (flashcard--days-til-next-review 0.9 stability)))
                 (goto-char position)
-              (org-set-property "stability" (number-to-string stability))
-              (org-set-property "difficulty" (number-to-string difficulty))
-              (org-set-property "last-review-timestamp" current-timestamp)
-              (org-set-property "next-review-deadline"
-                                (format-time-string "%Y-%m-%dT%H:%M:%S%z"
-                                                    (flashcard--time-add-days (current-time) days-til-due))))
+                (org-set-property "stability" (number-to-string stability))
+                (org-set-property "difficulty" (number-to-string difficulty))
+                (org-set-property "last-review-timestamp" current-timestamp)
+                (org-set-property "next-review-deadline"
+                                  (format-time-string "%Y-%m-%dT%H:%M:%S%z"
+                                                      (flashcard--time-add-days (current-time) days-til-due))))
             ;; else (initial review)
             (let ((initial-stability (flashcard--stability-initial grade))
                   (initial-difficulty (flashcard--difficulty-initial grade)))
@@ -529,8 +606,8 @@ FSRS algorithm."
               (org-set-property "next-review-deadline"
                                 (format-time-string "%Y-%m-%dT%H:%M:%S%z"
                                                     (flashcard--time-add-days (current-time)
-                                                                     (flashcard--days-til-next-review 0.9
-                                                                                             initial-stability))))
+                                                                              (flashcard--days-til-next-review 0.9
+                                                                                                               initial-stability))))
               (list initial-stability initial-difficulty )))
           (save-buffer)))
       (kill-buffer buffer))))
