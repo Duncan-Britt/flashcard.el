@@ -191,6 +191,7 @@ Essential for effective spaced repetition."
 (defvar flashcard--window-config-before-review nil "Saved window configuration to be restored after reviewing flashcards.")
 (defvar flashcard--current-file nil "Source file of flashcard during reviewing.")
 (defvar flashcard--current-line nil "Source line of flashcard during reviewing.")
+(defvar flashcard--is-cramming nil "Cramming? Otherwise, rate cards.")
 
 (defconst flashcard--id-regexp "[0-9A-F]\\{8\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{12\\}")
 
@@ -302,13 +303,67 @@ before question, and inserts flashcard into persistant storage."
         (user-error "No flashcard %s <ID> on this line.?" flashcard-designator)))))
 
 (defun flashcard-review ()
-  "Review flashcards."
+  "Review flashcards which are due."
   (interactive)
+  (setq flashcard--is-cramming nil)
   (setq flashcard--window-config-before-review (current-window-configuration))
   (setq flashcard--review-queue (flashcard--due-for-review))
   (if flashcard--review-queue
       (flashcard--review-next-card)
     (message "No flashcards due today")))
+
+(defun flashcard-cram ()
+  "Cram flashcards.
+Doesn't update flashcard review history."
+  (interactive)
+  (setq flashcard--is-cramming t)
+  (setq flashcard--window-config-before-review (current-window-configuration))
+  (setq flashcard--review-queue (flashcard--due-for-review))
+  (if flashcard--review-queue
+      (flashcard--review-next-card)
+    (message "Found 0 flashcards")))
+
+(defun flashcard-browse ()
+  "Browse all flashcards in an occur-like buffer."
+  (interactive)
+  (cond
+   ;; ((and (fboundp 'rg) (executable-find "rg")) TODO
+   ;;  (flashcard--browse-ripgrep))
+   ((executable-find "grep")
+    (flashcard--browse-grep))
+   (t
+    (flashcard--browse-native))))
+
+(defun flashcard--browse-native ()
+  "Helper for flashcard-browse in pure elisp."
+  (let ((files (flashcard--get-all-flashcard-file-paths))
+        (pattern (concat "^.*" (regexp-quote flashcard-designator) "\\s-*" flashcard--id-regexp)))
+    (if files
+        (multi-occur (mapcar #'find-file-noselect files) pattern)
+      (message "No flashcard files found in `flashcard-path-list'"))))
+
+;; (defun flashcard--browse-ripgrep ()
+;;   "Helper for flashcard-browse using ripgrep.
+;; TODO"
+;;   nil)
+
+(defun flashcard--browse-grep ()
+  "Helper for flashcard-browse using grep."
+  (let ((files (flashcard--get-all-flashcard-file-paths))
+        (pattern (concat (regexp-quote flashcard-designator) "\\s-*" flashcard--id-regexp))
+        (grep-buffer "*Flashcard Browse*"))
+
+    (if (null files)
+        (message "No flashcard files found in `flashcard-path-list'")
+
+      ;; Use grep to search for flashcard designators
+      (grep (format "grep -n -H -e \"%s\" %s"
+                    pattern
+                    (mapconcat #'shell-quote-argument files " ")))
+
+      ;; Rename the grep buffer to something more descriptive
+      (with-current-buffer grep-buffer
+        (rename-buffer "*Flashcard Browse*" t)))))
 
 (defun flashcard--review-next-card ()
   "Review the next card in the queue."
@@ -362,17 +417,20 @@ TYPE is either 'HIDE or 'REVEAL."
   "Rate the just-revealed card from transient menu.
 Then continue."
   (interactive (list (transient-args transient-current-command)))
-  (let ((grade (pcase-exhaustive (this-command-keys)
-                 ("e" :easy)
-                 ("g" :good)
-                 ("h" :hard)
-                 ("f" :forgot))))
-    (flashcard--update-review-history flashcard--current-id grade)
+  (unless flashcard--is-cramming
+    (let ((grade (pcase-exhaustive (this-command-keys)
+                   ("e" :easy)
+                   ("g" :good)
+                   ("h" :hard)
+                   ("f" :forgot))))
+      (flashcard--update-review-history flashcard--current-id grade)))
+  (let ((visit-source-p (transient-arg-value "--visit-source" args)))
     (if (and flashcard--review-queue
-             (not (transient-arg-value "--visit-source" args)))
+             (not visit-source-p))
         (flashcard--review-next-card)
       (flashcard-quit-review)
-      (flashcard--visit-source))))
+      (when visit-source-p
+        (flashcard--visit-source)))))
 
 (defun flashcard--visit-source ()
   "Visit source file of current flashcard."
@@ -397,11 +455,22 @@ Then continue."
    ["Abort"
     ("q" "Quit without rating card" flashcard--quit-review-suffix)]]
   ["After rating or abort"
-    ("-s" "Visit source (quit reviewing)" "--visit-source")])
+   ("-s" "Visit source (quit reviewing)" "--visit-source")])
+
+(transient-define-prefix flashcard--cram-reveal-menu ()
+  "Menu for flashcards once revealed."
+  :refresh-suffixes t
+  [["Continue"
+    ("n" "Next card" flashcard-rate)]
+   ["Abort"
+    ("q" "Quit" flashcard--quit-review-suffix)]]
+  ["After abort"
+   ("-s" "Visit source (quit reviewing)" "--visit-source")])
 
 (defun flashcard-quit-review ()
   "Quit the current review session."
   (interactive)
+  (setq flashcard--is-cramming nil)
   (kill-buffer "*flashcard*")
   (when (get-buffer-window "*flashcard*")
     (delete-window (get-buffer-window "*flashcard*")))
@@ -417,7 +486,9 @@ Then continue."
    ((eq flashcard--current-type 'question)
     (insert "\n\n---\n\n")
     (insert flashcard--answer)))
-  (flashcard--rate-menu))
+  (if flashcard--is-cramming
+      (flashcard--cram-reveal-menu)
+    (flashcard--rate-menu)))
 
 (defun flashcard--update-review-history (id grade)
   "Update review history of card with ID.
@@ -476,6 +547,8 @@ FSRS algorithm."
 
 (defun flashcard--due-for-review ()
   "Return list of flashcard locations matching DESIGNATOR.
+Filtered by those due for review.
+
 Each location is a list of the form
 `(,ID ,FILE ,LINE-NUMBER ,MAJOR-MODE ,@CONTENT), where CONTENT takes the
 form `(question ,QUESTION ,ANSWER) or `(cloze ,FILL-IN-THE-BLANK)."
@@ -496,12 +569,13 @@ form `(question ,QUESTION ,ANSWER) or `(cloze ,FILL-IN-THE-BLANK)."
         (pcase-let ((`(,file ,line ,id) location))
           (pcase-let ((`(,history-file . ,position) (org-id-find id)))
             ;; Only collect cards due for review
-            (when (with-temp-buffer
-                    (org-mode)
-                    (insert-file-contents history-file)
-                    (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
-                      (time-less-p (encode-time (parse-time-string next-review-deadline-str))
-                                   (current-time))))
+            (when (or flashcard--is-cramming
+                      (with-temp-buffer
+                        (org-mode)
+                        (insert-file-contents history-file)
+                        (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
+                          (time-less-p (encode-time (parse-time-string next-review-deadline-str))
+                                       (current-time)))))
               (with-temp-buffer
                 (insert-file-contents file)
                 (setq buffer-file-name file)
@@ -522,12 +596,13 @@ form `(question ,QUESTION ,ANSWER) or `(cloze ,FILL-IN-THE-BLANK)."
         (pcase-let ((`(,file ,line ,id) location))
           (pcase-let ((`(,history-file . ,position) (org-id-find id)))
             ;; Only collect cards due for review
-            (when (with-temp-buffer
-                    (org-mode)
-                    (insert-file-contents history-file)
-                    (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
-                      (time-less-p (encode-time (parse-time-string next-review-deadline-str))
-                                   (current-time))))
+            (when (or flashcard--is-cramming
+                      (with-temp-buffer
+                        (org-mode)
+                        (insert-file-contents history-file)
+                        (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
+                          (time-less-p (encode-time (parse-time-string next-review-deadline-str))
+                                       (current-time)))))
               (with-temp-buffer
                 (insert-file-contents file)
                 (setq buffer-file-name file)
@@ -617,10 +692,11 @@ Uses native Emacs search through files."
                 (when id
                   (pcase-let ((`(,history-file . ,position) (org-id-find id)))
                     ;; Only collect cards due for review
-                    (when (with-current-buffer (find-file-noselect history-file)
-                            (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
-                              (time-less-p (encode-time (parse-time-string next-review-deadline-str))
-                                           (current-time))))
+                    (when (or flashcard--is-cramming
+                              (with-current-buffer (find-file-noselect history-file)
+                                (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
+                                  (time-less-p (encode-time (parse-time-string next-review-deadline-str))
+                                               (current-time)))))
                       (move-end-of-line 1)
                       (push (append (list id file line saved-major-mode)
                                     (flashcard--parse-question-or-cloze-str-at-point))
