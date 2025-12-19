@@ -27,23 +27,12 @@
 ;; │ Summary │
 ;; └─────────┘
 ;; This package implements a Spaced Repetition System (SRS) for
-;; creating and reviewing flashcards.  Flashcards can be embedded among
-;; your notes, or any text file, so long as you tell `flashcard.el'
-;; where to look for them--by setting `flashcard-path-list'.
-
-;; Use case: You're in the midst of taking notes when it occurs to you
-;; that what you've just written would be worth committing to
-;; memory.  You write a question above it, put your cursor over the
-;; question, run M-x flashcard-make-at-point and resume notetaking.
-
-;; ┌──────────┐
-;; │ Features │
-;; └──────────┘
-;; - Flashcards can be embedded in any text file (e.g. your notes).
-;; - No databases--flashcards and metadata are stored in text files.
-;; - Implements Free Spaced Repetition Scheduler (FSRS) algorithm.
-;;   https://github.com/open-spaced-repetition/fsrs4anki/wiki/ABC-of-FSRS
-;; - No external dependencies
+;; creating and reviewing flashcards.  Flashcards can be embedded
+;; among your notes, or any text file, so long as you tell
+;; `flashcard.el' where to look for them--by setting
+;; `flashcard-path-list'. Implements Free Spaced Repetition Scheduler
+;; (FSRS) algorithm.
+;; https://github.com/open-spaced-repetition/fsrs4anki/wiki/ABC-of-FSRS
 
 ;; ┌──────────────┐
 ;; │ Installation │
@@ -79,7 +68,7 @@
 ;; │ ...whatever comes before                            │
 ;; │                                                     │
 ;; │ FC: 4D55B42A-1389-45CF-B242-E8EBFE7E0784            │
-;; │ The {{mitochondria}} is the powerhouse of the cell.  │
+;; │ The {{mitochondria}} is the powerhouse of the cell. │
 ;; │                                                     │
 ;; │ rest of the file...                                 │
 ;; └─────────────────────────────────────────────────────┘
