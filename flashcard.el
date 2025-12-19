@@ -476,22 +476,10 @@ for tags by which to filter the results."
   "Return non-NIL if card with CARD-ID matches TAGS.
 If ANY-OR-ALL is \"any\", card only needs to match at least one tag.
 Otherwise it must match all tags."
-  (let ((history-entry (org-id-find card-id)))
-    (when history-entry
-      (pcase-let ((`(,history-file . ,position) history-entry))
-        (let ((file-was-open-p (get-file-buffer history-file))
-              (buffer (find-file-noselect history-file)))
-          (unwind-protect
-              (with-current-buffer buffer
-                (let* ((tags-str (org-entry-get position "flashcard-tags"))
-                       (card-tags (when tags-str
-                                    (mapcar #'string-trim
-                                            (split-string tags-str "," t)))))
-                  (pcase-exhaustive any-or-all
-                    ("any" (seq-intersection tags card-tags #'string=))
-                    ("all" (seq-every-p (lambda (tag) (member tag card-tags)) tags)))))
-            (unless file-was-open-p
-              (kill-buffer buffer))))))))
+  (let ((card-tags (flashcard--tags card-id)))
+    (pcase-exhaustive any-or-all
+      ("any" (seq-intersection tags card-tags #'string=))
+      ("all" (seq-every-p (lambda (tag) (member tag card-tags)) tags)))))
 
 (defun flashcard--review-next-card ()
   "Review the next card in the queue."
@@ -513,6 +501,22 @@ TYPE is either 'HIDE or 'REVEAL."
                                "\\1"
                                cloze-str))))
 
+(defun flashcard--tags (card-id)
+  "Return list of tags for card with ID."
+  (let ((history-entry (org-id-find card-id)))
+    (when history-entry
+      (pcase-let ((`(,history-file . ,position) history-entry))
+        (let ((file-was-open-p (get-file-buffer history-file))
+              (buffer (find-file-noselect history-file)))
+          (unwind-protect
+              (with-current-buffer buffer
+                (let ((tags-str (org-entry-get position "flashcard-tags")))
+                  (when tags-str
+                    (mapcar #'string-trim
+                            (split-string tags-str "," t)))))
+            (unless file-was-open-p
+              (kill-buffer buffer))))))))
+
 (defun flashcard--review-card (card)
   "Review CARD."
   (delete-other-windows)
@@ -529,6 +533,8 @@ TYPE is either 'HIDE or 'REVEAL."
        (setq flashcard--current-line line)
        (setq-local flashcard--current-type 'cloze)
        (setq-local flashcard--current-cloze cloze)
+       (when-let ((tags (flashcard--tags id)))
+         (insert "Tags: " (string-join tags ", ") "\n\n"))
        (insert (flashcard--format-cloze cloze 'hide)))
       (`(,id ,file ,line ,mode question ,question ,answer)
        (funcall mode)
@@ -538,6 +544,8 @@ TYPE is either 'HIDE or 'REVEAL."
        (setq flashcard--current-file file)
        (setq flashcard--current-line line)
        (setq-local flashcard--current-type 'question)
+       (when-let ((tags (flashcard--tags id)))
+         (insert "Tags: " (string-join tags ", ") "\n\n"))
        (insert question))
       (_ (error "Unrecognized flashcard format: %s" card)))))
 
