@@ -379,68 +379,204 @@ before question, and inserts flashcard into persistant storage."
         ;; else
         (user-error "No flashcard %s <ID> on this line." flashcard-designator)))))
 
-(defun flashcard-review ()
+(defun flashcard-review (&optional filter-by-tags-p)
   "Review flashcards which are due."
-  (interactive)
+  (interactive "P")
   (setq flashcard--is-cramming nil)
   (setq flashcard--window-config-before-review (current-window-configuration))
-  (setq flashcard--review-queue (flashcard--due-for-review))
-  (if flashcard--review-queue
-      (flashcard--review-next-card)
-    (message "No flashcards due today")))
+  (let ((tags)
+        (any-or-all-case))
+    (when filter-by-tags-p
+      (pcase-let ((`(,x ,y) (flashcard--prompt-read-tags)))
+        (setq tags x)
+        (setq any-or-all-case y)))
+    (setq flashcard--review-queue (flashcard--due-for-review tags any-or-all-case))
+    (if flashcard--review-queue
+        (flashcard--review-next-card)
+      (message "No flashcards due today"))))
 
-(defun flashcard-cram ()
+(defun flashcard-cram (&optional filter-by-tags-p)
   "Cram flashcards.
 Doesn't update flashcard review history."
-  (interactive)
+  (interactive "P")
   (setq flashcard--is-cramming t)
   (setq flashcard--window-config-before-review (current-window-configuration))
-  (setq flashcard--review-queue (flashcard--due-for-review))
-  (if flashcard--review-queue
-      (flashcard--review-next-card)
-    (message "Found 0 flashcards")))
+  (let ((tags)
+        (any-or-all-case))
+    (when filter-by-tags-p
+      (pcase-let ((`(,x ,y) (flashcard--prompt-read-tags)))
+        (setq tags x)
+        (setq any-or-all-case y)))
+    (setq flashcard--review-queue (flashcard--due-for-review tags any-or-all-case))
+    (if flashcard--review-queue
+        (flashcard--review-next-card)
+      (message "Found 0 flashcards"))))
 
-(defun flashcard-browse ()
-  "Browse all flashcards in an occur-like buffer."
-  (interactive)
-  (cond
-   ;; ((and (fboundp 'rg) (executable-find "rg")) TODO
-   ;;  (flashcard--browse-ripgrep))
-   ((executable-find "grep")
-    (flashcard--browse-grep))
-   (t
-    (flashcard--browse-native))))
+(defun flashcard--prompt-read-tags ()
+  "Prompt the user for tags and return selection."
+  (let ((any-or-all-case (completing-read "Filter by tags: require [any] match or [all] matches? "
+                               '("any" "all") nil t))
+        (tags (completing-read-multiple
+                          "Tags: " (flashcard--all-known-tags))))
+    (list tags any-or-all-case)))
 
-(defun flashcard--browse-native ()
-  "Helper for flashcard-browse in pure elisp."
+(defun flashcard-browse (&optional filter-by-tags-p)
+  "Browse all flashcards in an occur-like buffer.
+FILTER-BY-TAGS-P, (which can be set to non-NIL by using the prefix
+argument when called interactively), when non-NIL, will prompt the user
+for tags by which to filter the results."
+  (interactive "P")
+  (let ((tags)
+        (any-or-all-case))
+    (when filter-by-tags-p
+      (pcase-let ((`(,x ,y) (flashcard--prompt-read-tags)))
+        (setq tags x)
+        (setq any-or-all-case y)))
+    (cond
+     ;; ((and (fboundp 'rg) (executable-find "rg"))
+     ;;  (flashcard--browse-ripgrep tags any-or-all-case)) TODO implement someday
+     ((executable-find "grep")
+      (flashcard--browse-grep tags any-or-all-case))
+     (t
+      (flashcard--browse-native tags any-or-all-case)))))
+
+(defun flashcard--browse-native (&optional tags any-or-all)
+  "Helper for flashcard-browse using compilation-mode.
+When TAGS is non-NIL, filter results. ANY-or-ALL specifies whether to
+gather flashcards matching all TAGS or any TAGS."
+  (when-let ((buf (get-buffer "*Flashcard Browse*")))
+    (kill-buffer buf))
   (let ((files (flashcard--get-all-flashcard-file-paths))
-        (pattern (concat "^.*" (regexp-quote flashcard-designator) "\\s-*" flashcard--id-regexp)))
-    (if files
-        (multi-occur (mapcar #'find-file-noselect files) pattern)
-      (message "No flashcard files found in `flashcard-path-list'"))))
+        (results nil))
+    (dolist (file files)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (while (re-search-forward (concat "^.*" (regexp-quote flashcard-designator)
+                                          "\\s-*\\(" flashcard--id-regexp "\\)")
+                                  nil t)
+          (let ((line (line-number-at-pos))
+                (id (match-string 1)))
+            (when (or (null tags)
+                      (flashcard--matches-tag-p id tags any-or-all))
+              (push (format "%s:%d: %s" file line
+                            (buffer-substring (line-beginning-position)
+                                              (line-end-position)))
+                    results))))))
+    (if results
+        (with-current-buffer (get-buffer-create "*Flashcard Browse*")
+          (insert (mapconcat #'identity (nreverse results) "\n"))
+          (compilation-mode)
+          (setq-local compilation-directory default-directory)
+          (goto-char (point-min))
+          (pop-to-buffer (current-buffer)))
+      (message "No flashcards found"))))
 
-;; (defun flashcard--browse-ripgrep ()
-;;   "Helper for flashcard-browse using ripgrep.
-;; TODO"
-;;   nil)
-
-(defun flashcard--browse-grep ()
-  "Helper for flashcard-browse using grep."
+(defun flashcard--browse-grep (&optional tags any-or-all)
+  "Helper for flashcard-browse using grep.
+When TAGS is non-NIL, filter results. ANY-or-ALL specifies whether to
+gather flashcards matching all TAGS or any TAGS."
   (let ((files (flashcard--get-all-flashcard-file-paths))
-        (pattern (concat (regexp-quote flashcard-designator) "\\s-*" flashcard--id-regexp))
-        (grep-buffer "*Flashcard Browse*"))
-
+        (pattern (concat (regexp-quote flashcard-designator) "\\s-*" flashcard--id-regexp)))
     (if (null files)
-        (message "No flashcard files found in `flashcard-path-list'")
+        (message "No flashcard files found in =flashcard-path-list'")
+      ;; else
+      (let ((grep-cmd (format "grep -n -H -e \"%s\" %s"
+                              pattern
+                              (mapconcat #'shell-quote-argument files " "))))
+        (grep grep-cmd)
+        ;; Add sentinel to filter after grep completes
+        (let ((proc (get-buffer-process "*grep*")))
+          (when proc
+            (set-process-sentinel
+             proc
+             (let ((captured-tags tags)
+                   (captured-any-or-all any-or-all))
+               (lambda (process event)
+                 (when (string-match-p "finished\\|exited" event)
+                   (let ((grep-buffer (get-buffer "*grep*")))
+                     (when (buffer-live-p grep-buffer)
+                       (with-current-buffer grep-buffer
+                         (rename-buffer "*Flashcard Browse*" t)
+                         (when captured-tags
+                           (flashcard--filter-grep-buffer
+                            captured-tags
+                            captured-any-or-all)))))))))))))))
 
-      ;; Use grep to search for flashcard designators
-      (grep (format "grep -n -H -e \"%s\" %s"
-                    pattern
-                    (mapconcat #'shell-quote-argument files " ")))
+(defun flashcard--filter-occur-buffer (tags any-or-all)
+  "Remove results not matching TAGS.
+ANY-OR-ALL determines whether cards must match any tag, or all TAGS."
+  (read-only-mode -1)
+  (unwind-protect
+      (while (flashcard--occur-buffer-advance-card)
+        (let ((card-id (match-string 1)))
+          (unless (flashcard--matches-tag-p card-id tags any-or-all)
+            (flashcard--occur-buffer-remove-card))))
+    (read-only-mode 1)))
 
-      ;; Rename the grep buffer to something more descriptive
-      (with-current-buffer grep-buffer
-        (rename-buffer "*Flashcard Browse*" t)))))
+(defun flashcard--filter-grep-buffer (tags any-or-all)
+  "Remove results not matching TAGS.
+ANY-OR-ALL determines whether cards must match any tag, or all TAGS."
+  (read-only-mode -1)
+  (unwind-protect
+      (while (flashcard--grep-buffer-advance-card)
+        (let ((card-id (match-string 1)))
+          (unless (flashcard--matches-tag-p card-id tags any-or-all)
+            (flashcard--grep-buffer-remove-card))))
+    (read-only-mode 1)))
+
+(defun flashcard--matches-tag-p (card-id tags any-or-all)
+  "Return non-NIL if card with CARD-ID matches TAGS.
+If ANY-OR-ALL is \"any\", card only needs to match at least one tag.
+Otherwise it must match all tags."
+  (let ((history-entry (org-id-find card-id)))
+    (when history-entry
+      (pcase-let ((`(,history-file . ,position) history-entry))
+        (let ((file-was-open-p (get-file-buffer history-file))
+              (buffer (find-file-noselect history-file)))
+          (unwind-protect
+              (with-current-buffer buffer
+                (let* ((tags-str (org-entry-get position "flashcard-tags"))
+                       (card-tags (when tags-str
+                                    (mapcar #'string-trim
+                                            (split-string tags-str "," t)))))
+                  (pcase-exhaustive any-or-all
+                    ("any" (seq-intersection tags card-tags #'string=))
+                    ("all" (seq-every-p (lambda (tag) (member tag card-tags)) tags)))))
+            (unless file-was-open-p
+              (kill-buffer buffer))))))))
+
+(defun flashcard--occur-buffer-remove-card ()
+  "Delete card from grep buffer.
+Called by `flashcard--filter-grep-buffer'."
+  ;; TODO
+  ;; (delete-region (line-beginning-position) (line-end-position))
+  ;; (delete-char 1)
+  )
+
+(defun flashcard--grep-buffer-remove-card ()
+  "Delete card from grep buffer.
+Called by `flashcard--filter-grep-buffer'."
+  (delete-region (line-beginning-position) (line-end-position))
+  (delete-char 1))
+
+(defun flashcard--occur-buffer-advance-card ()
+  "Move point to line of next card.
+Return card id."
+  (re-search-forward (concat (regexp-quote flashcard-designator)
+                             "[[:space:]]*\\("
+                             flashcard--id-regexp
+                             "\\)")
+                     nil t))
+
+(defun flashcard--grep-buffer-advance-card ()
+  "Move point to line of next card.
+Return card id."
+  (re-search-forward (concat (regexp-quote flashcard-designator)
+                             "[[:space:]]*\\("
+                             flashcard--id-regexp
+                             "\\)")
+                     nil t))
 
 (defun flashcard--review-next-card ()
   "Review the next card in the queue."
@@ -622,20 +758,25 @@ FSRS algorithm."
   "Add DAYS (a decimal number) to TIME."
   (time-add time (seconds-to-time (* days 86400))))
 
-(defun flashcard--due-for-review ()
+(defun flashcard--due-for-review (tags any-or-all)
   "Return list of flashcard locations matching DESIGNATOR.
 Filtered by those due for review.
 
 Each location is a list of the form
 `(,ID ,FILE ,LINE-NUMBER ,MAJOR-MODE ,@CONTENT), where CONTENT takes the
 form `(question ,QUESTION ,ANSWER) or `(cloze ,FILL-IN-THE-BLANK)."
-  (cond
-   ((and (fboundp 'rg) (executable-find "rg"))
-    (flashcard--due-ripgrep))
-   ((executable-find "grep")
-    (flashcard--due-grep))
-   (t
-    (flashcard--due-native))))
+  (let ((cards (cond
+                ((and (fboundp 'rg) (executable-find "rg"))
+                 (flashcard--due-ripgrep))
+                ((executable-find "grep")
+                 (flashcard--due-grep))
+                (t
+                 (flashcard--due-native)))))
+    (if tags
+        (seq-filter (lambda (card)
+                      (flashcard--matches-tag-p (car card) tags any-or-all))
+                    cards)
+      cards)))
 
 (defun flashcard--due-ripgrep ()
   "Helper for `flashcard--due-for-review' using ripgrep."
