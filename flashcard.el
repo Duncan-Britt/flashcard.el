@@ -97,9 +97,9 @@
 ;; └─────────────────────────────────────┘
 
 ;; Then, with your cursor on the question, invoke
-;; ┌─────────────────────────────┐
-;; │ M-x flashcard-make-at-point │
-;; └─────────────────────────────┘
+;;
+;;   M-x flashcard-make-at-point
+;;
 ;; Now you should see an id
 ;; ┌──────────────────────────────────────────┐
 ;; │ ...                                      │
@@ -145,6 +145,12 @@
 ;;  M-x flashcard-delete-at-point
 ;;
 ;; Run this command with your cursor is over the line with <DESIGNATOR>: <ID>
+
+;; ┌─────────────────────────┐
+;; │ Usage -- Transient Menu │
+;; └─────────────────────────┘
+;; M-x flashcard-menu provides a transient menu for accessing
+;; flashcard commands.
 
 ;;; Code:
 (require 'transient)
@@ -316,7 +322,7 @@ before question, and inserts flashcard into persistant storage."
                 ;; else
                 (user-error "ID: %s not found in %s" id flashcard-history-file))))
         ;; else
-        (user-error "No flashcard %s <ID> on this line." flashcard-designator)))))
+        (user-error "No flashcard %s <ID> on this line.?" flashcard-designator)))))
 
 (defun flashcard--all-known-tags ()
   "Return list of all unique tags used across all flashcards."
@@ -377,10 +383,12 @@ before question, and inserts flashcard into persistant storage."
                 (unless history-entry
                   (user-error "ID: %s not found in %s" id flashcard-history-file)))))
         ;; else
-        (user-error "No flashcard %s <ID> on this line." flashcard-designator)))))
+        (user-error "No flashcard %s <ID> on this line.?" flashcard-designator)))))
 
 (defun flashcard-review (&optional filter-by-tags-p)
-  "Review flashcards which are due."
+  "Review flashcards which are due.
+When FILTER-BY-TAGS-P is non nil, such as when invoked with a prefix
+arugment, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
   (setq flashcard--is-cramming nil)
   (setq flashcard--window-config-before-review (current-window-configuration))
@@ -395,9 +403,25 @@ before question, and inserts flashcard into persistant storage."
         (flashcard--review-next-card)
       (message "No flashcards due today"))))
 
+(transient-define-suffix flashcard-review-suffix (&optional args)
+  "Rate the just-revealed card from transient menu.
+Then continue."
+  (interactive (list (transient-args transient-current-command)))
+  (let ((filter-by-tags-p (transient-arg-value "--filter" args)))
+    (flashcard-review filter-by-tags-p)))
+
+(transient-define-suffix flashcard-cram-suffix (&optional args)
+  "Rate the just-revealed card from transient menu.
+Then continue."
+  (interactive (list (transient-args transient-current-command)))
+  (let ((filter-by-tags-p (transient-arg-value "--filter" args)))
+    (flashcard-cram filter-by-tags-p)))
+
 (defun flashcard-cram (&optional filter-by-tags-p)
   "Cram flashcards.
-Doesn't update flashcard review history."
+Like `flashcard-review', but doesn't update flashcard review history.  When
+FILTER-BY-TAGS-P is non nil, such as when invoked with a prefix
+arugment, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
   (setq flashcard--is-cramming t)
   (setq flashcard--window-config-before-review (current-window-configuration))
@@ -420,6 +444,13 @@ Doesn't update flashcard review history."
                           "Tags: " (flashcard--all-known-tags))))
     (list tags any-or-all-case)))
 
+(transient-define-suffix flashcard-browse-suffix (&optional args)
+  "Rate the just-revealed card from transient menu.
+Then continue."
+  (interactive (list (transient-args transient-current-command)))
+  (let ((filter-by-tags-p (transient-arg-value "--filter" args)))
+    (flashcard-browse filter-by-tags-p)))
+
 (defun flashcard-browse (&optional filter-by-tags-p)
   "Browse all flashcards in an occur-like buffer.
 FILTER-BY-TAGS-P, (which can be set to non-NIL by using the prefix
@@ -441,8 +472,8 @@ for tags by which to filter the results."
       (flashcard--browse-native tags any-or-all-case)))))
 
 (defun flashcard--browse-native (&optional tags any-or-all)
-  "Helper for flashcard-browse using compilation-mode.
-When TAGS is non-NIL, filter results. ANY-or-ALL specifies whether to
+  "Helper for `flashcard-browse' using `compilation-mode'.
+When TAGS is non-NIL, filter results.  ANY-OR-ALL specifies whether to
 gather flashcards matching all TAGS or any TAGS."
   (when-let ((buf (get-buffer "*Flashcard Browse*")))
     (kill-buffer buf))
@@ -473,8 +504,8 @@ gather flashcards matching all TAGS or any TAGS."
       (message "No flashcards found"))))
 
 (defun flashcard--browse-grep (&optional tags any-or-all)
-  "Helper for flashcard-browse using grep.
-When TAGS is non-NIL, filter results. ANY-or-ALL specifies whether to
+  "Helper for `flashcard-browse' using grep.
+When TAGS is non-NIL, filter results.  ANY-OR-ALL specifies whether to
 gather flashcards matching all TAGS or any TAGS."
   (let ((files (flashcard--get-all-flashcard-file-paths))
         (pattern (concat (regexp-quote flashcard-designator) "\\s-*" flashcard--id-regexp)))
@@ -657,6 +688,26 @@ Then continue."
   (when (transient-arg-value "--visit-source" args)
     (flashcard--visit-source)))
 
+(transient-define-suffix flashcard--visit-source-suffix ()
+  "Exit flashcard review and visit source."
+  (interactive)
+  (flashcard-quit-review)
+  (flashcard--visit-source))
+
+(transient-define-prefix flashcard-menu ()
+  "Transient menu for flashcard.el."
+  :refresh-suffixes t
+  [["Review"
+    ("r" "Review due cards" flashcard-review-suffix)
+    ("c" "Cram cardsd" flashcard-cram-suffix)]
+   ["Edit"
+    ("m" "Make flashcard at point" flashcard-make-at-point)
+    ("d" "Delete flashcard at point" flashcard-delete-at-point)
+    ("t" "Edit tags for flashcard at point" flashcard-edit-tags-at-point)
+    ("b" "Browse flashcards" flashcard-browse-suffix)]]
+  ["Options"
+   ("-f" "Filter by tag(s)" "--filter")])
+
 (transient-define-prefix flashcard--rate-menu ()
   "Menu for flashcards once revealed."
   :refresh-suffixes t
@@ -675,10 +726,9 @@ Then continue."
   :refresh-suffixes t
   [["Continue"
     ("n" "Next card" flashcard-rate)]
-   ["Abort"
-    ("q" "Quit" flashcard--quit-review-suffix)]]
-  ["After abort"
-   ("-s" "Visit source (quit reviewing)" "--visit-source")])
+   ["Exit"
+    ("q" "Quit" flashcard--quit-review-suffix)
+    ("s" "Visit source (quit reviewing)" flashcard--visit-source-suffix)]])
 
 (defun flashcard-quit-review ()
   "Quit the current review session."
@@ -764,7 +814,9 @@ Filtered by those due for review.
 
 Each location is a list of the form
 `(,ID ,FILE ,LINE-NUMBER ,MAJOR-MODE ,@CONTENT), where CONTENT takes the
-form `(question ,QUESTION ,ANSWER) or `(cloze ,FILL-IN-THE-BLANK)."
+form `(question ,QUESTION ,ANSWER) or `(cloze ,FILL-IN-THE-BLANK).
+Argument TAGS is used to filter flashcards.
+Argument ANY-OR-ALL determines whether flashcards should match any or all provided tags, if tags are provided."
   (let ((cards (cond
                 ((and (fboundp 'rg) (executable-find "rg"))
                  (flashcard--due-ripgrep))
@@ -1064,7 +1116,7 @@ DIFFICULTY, STABILITY, and RETRIEVABILITY are floats.  GRADE is one of
              (:hard (flashcard--w 15))
              (_ 1.0)))
         (b (pcase grade
-             (:easy (::w 16))
+             (:easy (flashcard--w 16))
              (_ 1.0)))
         (c (exp (flashcard--w 8))))
     (let ((α (+ 1.0 (* t-d t-s t-r h b c))))
