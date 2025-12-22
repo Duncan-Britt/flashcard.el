@@ -1,8 +1,8 @@
-;;; flashcard.el --- Spaced repetition in plain text -*- lexical-binding: t -*-
+;;; srs.el --- Spaced repetition in plain text -*- lexical-binding: t -*-
 
 ;; Author: Duncan Britt
-;; Contact: https://github.com/Duncan-Britt/flashcard/issues
-;; URL: https://github.com/Duncan-Britt/flashcard
+;; Contact: https://github.com/Duncan-Britt/srs/issues
+;; URL: https://github.com/Duncan-Britt/srs
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "30.2"))
 ;; Keywords: hypermedia, srs, memory
@@ -29,8 +29,8 @@
 ;; This package implements a Spaced Repetition System (SRS) for
 ;; creating and reviewing flashcards.  Flashcards can be embedded
 ;; among your notes, or any text file, so long as you tell
-;; `flashcard.el' where to look for them--by setting
-;; `flashcard-path-list'. Implements Free Spaced Repetition Scheduler
+;; `srs.el' where to look for them--by setting
+;; `srs-path-list'. Implements Free Spaced Repetition Scheduler
 ;; (FSRS) algorithm.
 ;; https://github.com/open-spaced-repetition/fsrs4anki/wiki/ABC-of-FSRS
 
@@ -39,10 +39,10 @@
 ;; └──────────────┘
 ;; Example Elpaca + use-package instalation
 ;;
-;;  (use-package flashcard
-;;    :ensure (:host github :repo "Duncan-Britt/flashcard.el")
+;;  (use-package srs
+;;    :ensure (:host github :repo "Duncan-Britt/srs.el")
 ;;    :config
-;;    (add-to-list 'flashcard-path-list (expand-file-name "~/notes/*.org")))
+;;    (add-to-list 'srs-path-list (expand-file-name "~/notes/*.org")))
 
 ;; ┌────────────────────────────┐
 ;; │ Usage -- Making Flashcards │
@@ -87,7 +87,7 @@
 
 ;; Then, with your cursor on the question, invoke
 ;;
-;;   M-x flashcard-make-at-point
+;;   M-x srs-card-make-at-point
 ;;
 ;; Now you should see an id
 ;; ┌──────────────────────────────────────────┐
@@ -100,24 +100,24 @@
 ;; └──────────────────────────────────────────┘
 
 ;; The flash card is made.  The metadata associated with the flashcard
-;; is saved in `flashcard-history-file' (by default,
-;; "<user-emacs-directory>/flashcard-history.org").
+;; is saved in `srs-history-file' (by default,
+;; "<user-emacs-directory>/srs-history.org").
 
 ;; BUT--in order to review your newly created flashcard, make sure the
 ;; file in which you wrote your flashcard is among those specified by
-;; `flashcard-path-list'.  This is how `flashcard.el' knows where to
+;; `srs-path-list'.  This is how `srs.el' knows where to
 ;; look for flashcards.
 
 ;; Some examples:
-;; (add-to-list 'flashcard-path-list (expand-file-name "~/path/to/your/notes/*"))
-;; (add-to-list 'flashcard-path-list (expand-file-name "~/only/org/files/*.org"))
-;; (add-to-list 'flashcard-path-list (expand-file-name "~/a/specific/file.txt"))
-;; (add-to-list 'flashcard-path-list (expand-file-name "~/even/source/code.el"))
+;; (add-to-list 'srs-path-list (expand-file-name "~/path/to/your/notes/*"))
+;; (add-to-list 'srs-path-list (expand-file-name "~/only/org/files/*.org"))
+;; (add-to-list 'srs-path-list (expand-file-name "~/a/specific/file.txt"))
+;; (add-to-list 'srs-path-list (expand-file-name "~/even/source/code.el"))
 
 ;; ┌───────────────────────────────┐
 ;; │ Usage -- Reviewing Flashcards │
 ;; └───────────────────────────────┘
-;;  M-x flashcard-review
+;;  M-x srs-review
 ;;
 ;; This is how you can review flashcards which are "due".
 
@@ -131,76 +131,76 @@
 ;; ┌──────────────────────────────┐
 ;; │ Usage -- Deleting Flashcards │
 ;; └──────────────────────────────┘
-;;  M-x flashcard-delete-at-point
+;;  M-x srs-card-delete-at-point
 ;;
 ;; Run this command with your cursor is over the line with <DESIGNATOR>: <ID>
 
 ;; ┌─────────────────────────┐
 ;; │ Usage -- Transient Menu │
 ;; └─────────────────────────┘
-;; M-x flashcard-menu provides a transient menu for accessing
-;; flashcard commands.
+;; M-x srs-menu provides a transient menu for accessing
+;; srs commands.
 
 ;;; Code:
 (require 'transient)
 ;; ┌────────┐
 ;; │ Custom │
 ;; └────────┘
-(defgroup flashcard nil
+(defgroup srs nil
   "Spaced repetition in plain text."
   :group 'applications)
 
-(defcustom flashcard-path-list nil
+(defcustom srs-path-list nil
   "A list of locations in which to search for flashcards.
 Examples:
 - file.txt       -- includes specific file
 - *.log          -- includes all =.log= files
 - notes/         -- includes entire directory
 - notes/**/*.org -- includes org files within notes or any subdirectories"
-  :group 'flashcard)
+  :group 'srs)
 
-(defcustom flashcard-designator "FC:"
+(defcustom srs-designator "FC:"
   "Designator for flashcards.
 
 For example, with the designator \"FC:\", a flashcard could be denoted
-as \"FC: <flashcard-id>\n<Question>\n\n<Answer>\"."
-  :group 'flashcard)
+as \"FC: <id>\n<Question>\n\n<Answer>\"."
+  :group 'srs)
 
-(defcustom flashcard-history-file (expand-file-name (concat user-emacs-directory "flashcard-history.org"))
+(defcustom srs-history-file (expand-file-name (concat user-emacs-directory "srs-history.org"))
   "A file in which to store users saved flashcard review history.
 
 Essential for effective spaced repetition."
-  :group 'flashcard)
+  :group 'srs)
 
-(defcustom flashcard-indicator-duration 1.0
+(defcustom srs-indicator-duration 1.0
   "Seconds to display success indicator."
-  :group 'flashcard)
+  :group 'srs)
 ;; ┌────────────┐
 ;; │ End custom │
 ;; └────────────┘
-(defvar-local flashcard--current-id nil)
-(defvar-local flashcard--current-type nil)
-(defvar-local flashcard--answer nil)
+(defvar-local srs--current-id nil)
+(defvar-local srs--current-type nil)
+(defvar-local srs--answer nil)
 
-(defvar flashcard--review-queue nil "Queue of flashcards to review.")
-(defvar flashcard--window-config-before-review nil "Saved window configuration to be restored after reviewing flashcards.")
-(defvar flashcard--current-file nil "Source file of flashcard during reviewing.")
-(defvar flashcard--current-line nil "Source line of flashcard during reviewing.")
-(defvar flashcard--is-cramming nil "Cramming? Otherwise, rate cards.")
+(defvar srs--review-queue nil "Queue of flashcards to review.")
+(defvar srs--window-config-before-review nil "Saved window configuration to be restored after reviewing flashcards.")
+(defvar srs--current-file nil "Source file of flashcard during reviewing.")
+(defvar srs--current-line nil "Source line of flashcard during reviewing.")
+(defvar srs--is-cramming nil "Cramming? Otherwise, rate cards.")
 
-(defconst flashcard--id-regexp "[0-9A-F]\\{8\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{12\\}")
+(defconst srs--id-regexp "[0-9A-F]\\{8\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{4\\}-[0-9A-F]\\{12\\}")
 
-(defun flashcard--show-indicator (position)
+(defun srs--show-indicator (position)
   "Display success indicator overlay at POSITION.
 
-Shows checkmark for `flashcard-indicator-duration' seconds.
+Shows checkmark for `srs-indicator-duration' seconds.
 Displays fetch timestamp in echo area if available.
 
 Reuses existing indicator overlay if present, extending its timer.
 This prevents overlay accumulation during rapid refreshes.
 
-Called by `flashcard-make-at-point' and `flashcard-delete-at-point'."
-  (when (> flashcard-indicator-duration 0)
+Called by `srs-card-make-at-point' and `srs-card-delete-at-point'."
+  (when (> srs-indicator-duration 0)
     (let* ((beg position)
            (end (save-excursion
                   (goto-char beg)
@@ -209,30 +209,30 @@ Called by `flashcard-make-at-point' and `flashcard-delete-at-point'."
            (existing-ov
             (seq-find
              (lambda (ov)
-               (overlay-get ov 'flashcard-indicator))
+               (overlay-get ov 'srs-indicator))
              (overlays-in beg end)))
            (ov (or existing-ov (make-overlay beg end))))
 
       ;; Cancel existing timer if overlay was reused
       (when existing-ov
-        (when-let ((timer (overlay-get ov 'flashcard-timer)))
+        (when-let ((timer (overlay-get ov 'srs-timer)))
           (cancel-timer timer)))
 
       ;; Set overlay properties (idempotent if reusing)
       (overlay-put ov 'before-string
                    (propertize "☑ " 'face '(:foreground "green" :weight bold)))
-      (overlay-put ov 'flashcard-indicator t)
+      (overlay-put ov 'srs-indicator t)
 
       ;; Create new timer and store it on overlay
-      (let ((timer (run-at-time flashcard-indicator-duration
+      (let ((timer (run-at-time srs-indicator-duration
                                 nil
                                 (lambda (overlay)
                                   (when (overlay-buffer overlay)
                                     (delete-overlay overlay)))
                                 ov)))
-        (overlay-put ov 'flashcard-timer timer)))))
+        (overlay-put ov 'srs-timer timer)))))
 
-(defun flashcard-make-at-point ()
+(defun srs-card-make-at-point ()
   "Make flashcard starting from paragraph(s) at point.
 
 Treats paragraph as the beginning of a flashcard question or
@@ -243,21 +243,21 @@ before question, and inserts flashcard into persistant storage."
     (open-line 1)
     (unless (bolp)
       (newline))
-    (insert (flashcard--comment-marker))
-    (insert flashcard-designator)
+    (insert (srs--comment-marker))
+    (insert srs-designator)
     (insert " ")
-    (let ((flashcard-id (flashcard--store-new)))
-      (insert flashcard-id)
+    (let ((card-id (srs--store-new)))
+      (insert card-id)
       (move-beginning-of-line 1)
-      (flashcard--show-indicator (point))
+      (srs--show-indicator (point))
       (save-buffer)
-      (message "Created new flashcard: %s" flashcard-id))
-    (unless (member buffer-file-name (flashcard--get-all-flashcard-file-paths))
-      (display-warning 'flashcard
-                       (format "Created flashcard in file not found among `flashcard-path-list'.\nUse (add-to-list 'flashcard-path-list \"%s\")" buffer-file-name)
+      (message "Created new flashcard: %s" card-id))
+    (unless (member buffer-file-name (srs--card-file-paths))
+      (display-warning 'srs
+                       (format "Created flashcard in file not found among `srs-path-list'.\nUse (add-to-list 'srs-path-list \"%s\")" buffer-file-name)
                        :warning))))
 
-(defun flashcard-edit-tags-at-point ()
+(defun srs-card-edit-tags ()
   "Edit tags of flashcard at point."
   (interactive)
   (save-excursion
@@ -266,9 +266,9 @@ before question, and inserts flashcard into persistant storage."
           (line-end (line-end-position))
           (completed-p))
       (goto-char line-start)
-      (if (re-search-forward (concat (regexp-quote flashcard-designator)
+      (if (re-search-forward (concat (regexp-quote srs-designator)
                                      "[[:space:]]*\\("
-                                     flashcard--id-regexp
+                                     srs--id-regexp
                                      "\\)")
                              line-end t)
           (progn
@@ -281,14 +281,14 @@ before question, and inserts flashcard into persistant storage."
                                  (hist-buffer (find-file-noselect history-file)))
                       (with-current-buffer hist-buffer
                         (org-mode)
-                        (let* ((initial-tags-str (org-entry-get position "flashcard-tags"))
+                        (let* ((initial-tags-str (org-entry-get position "srs-tags"))
                                (initial-tags (when initial-tags-str
                                                (mapcar #'string-trim
                                                        (split-string initial-tags-str "," t)))))
                           (let* ((operation (completing-read (format "(Tags: %s)\nOperation: " (string-join initial-tags ", "))
                                                              '("add" "remove" "replace") nil t))
                                  (new-tags (pcase-exhaustive operation
-                                             ("add" (let ((available-tags (seq-difference (flashcard--all-known-tags)
+                                             ("add" (let ((available-tags (seq-difference (srs--all-known-tags)
                                                                                           initial-tags #'string=)))
                                                       (seq-uniq (append initial-tags
                                                                         (completing-read-multiple
@@ -296,55 +296,55 @@ before question, and inserts flashcard into persistant storage."
                                              ("remove" (seq-difference initial-tags (completing-read-multiple
                                                                                      "Remove tags: " initial-tags nil t)))
                                              ("replace" (completing-read-multiple
-                                                         "Replace with: " (flashcard--all-known-tags)))))
+                                                         "Replace with: " (srs--all-known-tags)))))
                                  (tags-string (string-join new-tags ",")))
                             (goto-char position)
-                            (org-set-property "flashcard-tags" tags-string)
+                            (org-set-property "srs-tags" tags-string)
                             (save-buffer)
                             (setq completed-p t))))
                       (unless file-was-open-p
                         (kill-buffer hist-buffer)))
                     (when completed-p
                       (move-beginning-of-line 1)
-                      (flashcard--show-indicator (point)))
+                      (srs--show-indicator (point)))
                     (message "Edited tags for flashcard: %s" id))
                 ;; else
-                (user-error "ID: %s not found in %s" id flashcard-history-file))))
+                (user-error "ID: %s not found in %s" id srs-history-file))))
         ;; else
-        (user-error "No flashcard %s <ID> on this line" flashcard-designator)))))
+        (user-error "No flashcard %s <ID> on this line" srs-designator)))))
 
-(defun flashcard--all-known-tags ()
+(defun srs--all-known-tags ()
   "Return list of all unique tags used across all flashcards."
   (let ((tags (make-hash-table :test 'equal))
-        (files (flashcard--get-all-flashcard-file-paths)))
+        (files (srs--card-file-paths)))
     (dolist (file files)
       (with-temp-buffer
         (insert-file-contents file)
         (goto-char (point-min))
-        (while (re-search-forward (concat "^.*" (regexp-quote flashcard-designator)) nil t)
+        (while (re-search-forward (concat "^.*" (regexp-quote srs-designator)) nil t)
           (skip-chars-forward " \t\n\r\f")
-          (let ((id (flashcard--id-at-point)))
+          (let ((id (srs--id-at-point)))
             (when id
               (pcase-let ((`(,history-file . ,position) (org-id-find id)))
                 (with-current-buffer (find-file-noselect history-file)
-                  (let ((tags-str (org-entry-get position "flashcard-tags")))
+                  (let ((tags-str (org-entry-get position "srs-tags")))
                     (when tags-str
                       (dolist (tag (mapcar #'string-trim
                                            (split-string tags-str "," t)))
                         (puthash tag t tags)))))))))))
     (hash-table-keys tags)))
 
-(defun flashcard-delete-at-point ()
-  "Delete flashcard at point from file and `flashcard-history-file'."
+(defun srs-card-delete-at-point ()
+  "Delete flashcard at point from file and `srs-history-file'."
   (interactive)
   (save-excursion
     (let ((id nil)
           (line-start (line-beginning-position))
           (line-end (line-end-position)))
       (goto-char line-start)
-      (if (re-search-forward (concat (regexp-quote flashcard-designator)
+      (if (re-search-forward (concat (regexp-quote srs-designator)
                                      "[[:space:]]*\\("
-                                     flashcard--id-regexp
+                                     srs--id-regexp
                                      "\\)")
                              line-end t)
           (progn
@@ -365,82 +365,82 @@ before question, and inserts flashcard into persistant storage."
                         (kill-buffer hist-buffer)))
                     (delete-region line-start line-end)
                     (delete-blank-lines)
-                    (flashcard--show-indicator (point))
+                    (srs--show-indicator (point))
                     (save-buffer)
                     (message "Deleted flashcard: %s" id))
                 ;; else
                 (unless history-entry
-                  (user-error "ID: %s not found in %s" id flashcard-history-file)))))
+                  (user-error "ID: %s not found in %s" id srs-history-file)))))
         ;; else
-        (user-error "No flashcard %s <ID> on this line" flashcard-designator)))))
+        (user-error "No flashcard %s <ID> on this line" srs-designator)))))
 
-(defun flashcard-review (&optional filter-by-tags-p)
+(defun srs-review (&optional filter-by-tags-p)
   "Review flashcards which are due.
 When FILTER-BY-TAGS-P is non nil, such as when invoked with a prefix
 arugment, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
-  (setq flashcard--is-cramming nil)
-  (setq flashcard--window-config-before-review (current-window-configuration))
+  (setq srs--is-cramming nil)
+  (setq srs--window-config-before-review (current-window-configuration))
   (let ((tags)
         (any-or-all-case))
     (when filter-by-tags-p
-      (pcase-let ((`(,x ,y) (flashcard--prompt-read-tags)))
+      (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
         (setq tags x)
         (setq any-or-all-case y)))
-    (setq flashcard--review-queue (flashcard--due-for-review tags any-or-all-case))
-    (if flashcard--review-queue
-        (flashcard--review-next-card)
+    (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
+    (if srs--review-queue
+        (srs--review-next-card)
       (message "No flashcards due today"))))
 
-(transient-define-suffix flashcard-review-suffix (&optional args)
+(transient-define-suffix srs-review-suffix (&optional args)
   "Rate the just-revealed card from transient menu.
 Then continue."
   (interactive (list (transient-args transient-current-command)))
   (let ((filter-by-tags-p (transient-arg-value "--filter" args)))
-    (flashcard-review filter-by-tags-p)))
+    (srs-review filter-by-tags-p)))
 
-(transient-define-suffix flashcard-cram-suffix (&optional args)
+(transient-define-suffix srs-cram-suffix (&optional args)
   "Rate the just-revealed card from transient menu.
 Then continue."
   (interactive (list (transient-args transient-current-command)))
   (let ((filter-by-tags-p (transient-arg-value "--filter" args)))
-    (flashcard-cram filter-by-tags-p)))
+    (srs-cram filter-by-tags-p)))
 
-(defun flashcard-cram (&optional filter-by-tags-p)
+(defun srs-cram (&optional filter-by-tags-p)
   "Cram flashcards.
-Like `flashcard-review', but doesn't update flashcard review history.  When
+Like `srs-review', but doesn't update flashcard review history.  When
 FILTER-BY-TAGS-P is non nil, such as when invoked with a prefix
 arugment, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
-  (setq flashcard--is-cramming t)
-  (setq flashcard--window-config-before-review (current-window-configuration))
+  (setq srs--is-cramming t)
+  (setq srs--window-config-before-review (current-window-configuration))
   (let ((tags)
         (any-or-all-case))
     (when filter-by-tags-p
-      (pcase-let ((`(,x ,y) (flashcard--prompt-read-tags)))
+      (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
         (setq tags x)
         (setq any-or-all-case y)))
-    (setq flashcard--review-queue (flashcard--due-for-review tags any-or-all-case))
-    (if flashcard--review-queue
-        (flashcard--review-next-card)
+    (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
+    (if srs--review-queue
+        (srs--review-next-card)
       (message "Found 0 flashcards"))))
 
-(defun flashcard--prompt-read-tags ()
+(defun srs--prompt-read-tags ()
   "Prompt the user for tags and return selection."
   (let ((any-or-all-case (completing-read "Filter by tags: require [any] match or [all] matches? "
                                '("any" "all") nil t))
         (tags (completing-read-multiple
-                          "Tags: " (flashcard--all-known-tags))))
+                          "Tags: " (srs--all-known-tags))))
     (list tags any-or-all-case)))
 
-(transient-define-suffix flashcard-browse-suffix (&optional args)
+(transient-define-suffix srs-browse-suffix (&optional args)
   "Rate the just-revealed card from transient menu.
 Then continue."
   (interactive (list (transient-args transient-current-command)))
   (let ((filter-by-tags-p (transient-arg-value "--filter" args)))
-    (flashcard-browse filter-by-tags-p)))
+    (srs-browse filter-by-tags-p)))
 
-(defun flashcard-browse (&optional filter-by-tags-p)
+(defun srs-browse (&optional filter-by-tags-p)
   "Browse all flashcards in an occur-like buffer.
 FILTER-BY-TAGS-P, (which can be set to non-NIL by using the prefix
 argument when called interactively), when non-NIL, will prompt the user
@@ -449,45 +449,45 @@ for tags by which to filter the results."
   (let ((tags)
         (any-or-all-case))
     (when filter-by-tags-p
-      (pcase-let ((`(,x ,y) (flashcard--prompt-read-tags)))
+      (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
         (setq tags x)
         (setq any-or-all-case y)))
-    (let* ((flashcard--is-cramming t) ;; <- don't filter cards not due in call to `flashcard--due-for-review'
-           (cards (flashcard--due-for-review tags any-or-all-case)))
+    (let* ((srs--is-cramming t) ;; <- don't filter cards not due in call to `srs--due-for-review'
+           (cards (srs--due-for-review tags any-or-all-case)))
       (if cards
           (progn
-            (when-let ((buf (get-buffer "*Flashcard Browse*")))
+            (when-let ((buf (get-buffer "*Srs Browse*")))
               (kill-buffer buf))
-            (with-current-buffer (get-buffer-create "*Flashcard Browse*")
-              (insert (format "%d cards in %s\n" (length cards) flashcard-path-list))
+            (with-current-buffer (get-buffer-create "*Srs Browse*")
+              (insert (format "%d cards in %s\n" (length cards) srs-path-list))
               (dolist (card cards)
                 (pcase-exhaustive card
                   (`(,_ ,file ,line ,__ question ,question ,___)
                    (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " question))))
                   (`(,_ ,file ,line ,__ cloze ,cloze-str)
-                   (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " (flashcard--format-cloze cloze-str)))))))
+                   (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " (srs--format-cloze cloze-str)))))))
               (compilation-mode)
               (setq-local compilation-directory default-directory)
               (goto-char (point-min))
               (pop-to-buffer (current-buffer))))
         (message "No flashcards found")))))
 
-(defun flashcard--matches-tag-p (card-id tags any-or-all)
+(defun srs--matches-tag-p (card-id tags any-or-all)
   "Return non-NIL if card with CARD-ID matches TAGS.
 If ANY-OR-ALL is \"any\", card only needs to match at least one tag.
 Otherwise it must match all tags."
-  (let ((card-tags (flashcard--tags card-id)))
+  (let ((card-tags (srs--tags card-id)))
     (pcase-exhaustive any-or-all
       ("any" (seq-intersection tags card-tags #'string=))
       ("all" (seq-every-p (lambda (tag) (member tag card-tags)) tags)))))
 
-(defun flashcard--review-next-card ()
+(defun srs--review-next-card ()
   "Review the next card in the queue."
-  (when flashcard--review-queue
-    (let ((card (pop flashcard--review-queue)))
-      (flashcard--review-card card))))
+  (when srs--review-queue
+    (let ((card (pop srs--review-queue)))
+      (srs--review-card card))))
 
-(defun flashcard--format-cloze (cloze-str type)
+(defun srs--format-cloze (cloze-str type)
   "Format CLOZE-STR.
 
 TYPE is either 'HIDE or 'REVEAL."
@@ -501,7 +501,7 @@ TYPE is either 'HIDE or 'REVEAL."
                                "\\1"
                                cloze-str))))
 
-(defun flashcard--tags (card-id)
+(defun srs--tags (card-id)
   "Return list of tags for card with ID."
   (let ((history-entry (org-id-find card-id)))
     (when history-entry
@@ -510,142 +510,142 @@ TYPE is either 'HIDE or 'REVEAL."
               (buffer (find-file-noselect history-file)))
           (unwind-protect
               (with-current-buffer buffer
-                (let ((tags-str (org-entry-get position "flashcard-tags")))
+                (let ((tags-str (org-entry-get position "srs-tags")))
                   (when tags-str
                     (mapcar #'string-trim
                             (split-string tags-str "," t)))))
             (unless file-was-open-p
               (kill-buffer buffer))))))))
 
-(defun flashcard--review-card (card)
+(defun srs--review-card (card)
   "Review CARD."
   (delete-other-windows)
-  (let* ((buffer-name "*flashcard*")
+  (let* ((buffer-name "*srs*")
          (buffer (get-buffer-create buffer-name)))
     (switch-to-buffer buffer)
     (erase-buffer)
     (pcase card
       (`(,id ,file ,line ,mode cloze ,cloze)
        (funcall mode)
-       (flashcard--question-menu)
-       (setq-local flashcard--current-id id)
-       (setq flashcard--current-file file)
-       (setq flashcard--current-line line)
-       (setq-local flashcard--current-type 'cloze)
-       (setq-local flashcard--current-cloze cloze)
-       (when-let ((tags (flashcard--tags id)))
+       (srs--question-menu)
+       (setq-local srs--current-id id)
+       (setq srs--current-file file)
+       (setq srs--current-line line)
+       (setq-local srs--current-type 'cloze)
+       (setq-local srs--current-cloze cloze)
+       (when-let ((tags (srs--tags id)))
          (insert "Tags: " (string-join tags ", ") "\n\n"))
-       (insert (flashcard--format-cloze cloze 'hide)))
+       (insert (srs--format-cloze cloze 'hide)))
       (`(,id ,file ,line ,mode question ,question ,answer)
        (funcall mode)
-       (flashcard--question-menu)
-       (setq-local flashcard--answer answer)
-       (setq-local flashcard--current-id id)
-       (setq flashcard--current-file file)
-       (setq flashcard--current-line line)
-       (setq-local flashcard--current-type 'question)
-       (when-let ((tags (flashcard--tags id)))
+       (srs--question-menu)
+       (setq-local srs--answer answer)
+       (setq-local srs--current-id id)
+       (setq srs--current-file file)
+       (setq srs--current-line line)
+       (setq-local srs--current-type 'question)
+       (when-let ((tags (srs--tags id)))
          (insert "Tags: " (string-join tags ", ") "\n\n"))
        (insert question))
       (_ (error "Unrecognized flashcard format: %s" card)))))
 
-(transient-define-suffix flashcard-rate (&optional args)
+(transient-define-suffix srs-rate (&optional args)
   "Rate the just-revealed card from transient menu.
 Then continue."
   (interactive (list (transient-args transient-current-command)))
-  (unless flashcard--is-cramming
+  (unless srs--is-cramming
     (let ((grade (pcase-exhaustive (this-command-keys)
                    ("e" :easy)
                    ("g" :good)
                    ("h" :hard)
                    ("f" :forgot))))
-      (flashcard--update-review-history flashcard--current-id grade)))
+      (srs--update-review-history srs--current-id grade)))
   (let ((visit-source-p (transient-arg-value "--visit-source" args)))
-    (if (and flashcard--review-queue
+    (if (and srs--review-queue
              (not visit-source-p))
-        (flashcard--review-next-card)
-      (flashcard-quit-review)
+        (srs--review-next-card)
+      (srs-quit-review)
       (when visit-source-p
-        (flashcard--visit-source)))))
+        (srs--visit-source)))))
 
-(defun flashcard--visit-source ()
+(defun srs--visit-source ()
   "Visit source file of current flashcard."
-  (find-file flashcard--current-file)
-  (goto-line flashcard--current-line))
+  (find-file srs--current-file)
+  (goto-line srs--current-line))
 
-(transient-define-suffix flashcard--quit-review-suffix (&optional args)
+(transient-define-suffix srs--quit-review-suffix (&optional args)
   "Quit flashcard review from transient menu."
   (interactive (list (transient-args transient-current-command)))
-  (flashcard-quit-review)
+  (srs-quit-review)
   (when (transient-arg-value "--visit-source" args)
-    (flashcard--visit-source)))
+    (srs--visit-source)))
 
-(transient-define-suffix flashcard--visit-source-suffix ()
+(transient-define-suffix srs--visit-source-suffix ()
   "Exit flashcard review and visit source."
   (interactive)
-  (flashcard-quit-review)
-  (flashcard--visit-source))
+  (srs-quit-review)
+  (srs--visit-source))
 
-(transient-define-prefix flashcard-menu ()
-  "Transient menu for flashcard.el."
+(transient-define-prefix srs-menu ()
+  "Transient menu for srs.el."
   :refresh-suffixes t
   [["Review"
-    ("r" "Review due cards" flashcard-review-suffix)
-    ("c" "Cram cardsd" flashcard-cram-suffix)]
+    ("r" "Review due cards" srs-review-suffix)
+    ("c" "Cram cards" srs-cram-suffix)]
    ["Edit"
-    ("m" "Make flashcard at point" flashcard-make-at-point)
-    ("d" "Delete flashcard at point" flashcard-delete-at-point)
-    ("t" "Edit tags for flashcard at point" flashcard-edit-tags-at-point)
-    ("b" "Browse flashcards" flashcard-browse-suffix)]]
+    ("m" "Make flashcard at point" srs-card-make-at-point)
+    ("d" "Delete flashcard at point" srs-card-delete-at-point)
+    ("t" "Edit tags for flashcard at point" srs-card-edit-tags)
+    ("b" "Browse flashcards" srs-browse-suffix)]]
   ["Options"
    ("-f" "Filter by tag(s)" "--filter")])
 
-(transient-define-prefix flashcard--rate-menu ()
+(transient-define-prefix srs--rate-menu ()
   "Menu for flashcards once revealed."
   :refresh-suffixes t
   [["Rating"
-    ("e" "Easy" flashcard-rate)
-    ("g" "Good" flashcard-rate)
-    ("h" "Hard" flashcard-rate)
-    ("f" "Forgot" flashcard-rate)]
+    ("e" "Easy" srs-rate)
+    ("g" "Good" srs-rate)
+    ("h" "Hard" srs-rate)
+    ("f" "Forgot" srs-rate)]
    ["Abort"
-    ("q" "Quit without rating card" flashcard--quit-review-suffix)]]
+    ("q" "Quit without rating card" srs--quit-review-suffix)]]
   ["After rating or abort"
    ("-s" "Visit source (quit reviewing)" "--visit-source")])
 
-(transient-define-prefix flashcard--cram-reveal-menu ()
+(transient-define-prefix srs--cram-reveal-menu ()
   "Menu for flashcards once revealed."
   :refresh-suffixes t
   [["Continue"
-    ("n" "Next card" flashcard-rate)]
+    ("n" "Next card" srs-rate)]
    ["Exit"
-    ("q" "Quit" flashcard--quit-review-suffix)
-    ("s" "Visit source (quit reviewing)" flashcard--visit-source-suffix)]])
+    ("q" "Quit" srs--quit-review-suffix)
+    ("s" "Visit source (quit reviewing)" srs--visit-source-suffix)]])
 
-(defun flashcard-quit-review ()
+(defun srs-quit-review ()
   "Quit the current review session."
   (interactive)
-  (setq flashcard--is-cramming nil)
-  (kill-buffer "*flashcard*")
-  (when (get-buffer-window "*flashcard*")
-    (delete-window (get-buffer-window "*flashcard*")))
-  (set-window-configuration flashcard--window-config-before-review))
+  (setq srs--is-cramming nil)
+  (kill-buffer "*srs*")
+  (when (get-buffer-window "*srs*")
+    (delete-window (get-buffer-window "*srs*")))
+  (set-window-configuration srs--window-config-before-review))
 
-(defun flashcard-show-answer ()
+(defun srs-show-answer ()
   "Reveal the answer to the current flashcard."
   (interactive)
   (cond
-   ((eq flashcard--current-type 'cloze)
+   ((eq srs--current-type 'cloze)
     (erase-buffer)
-    (insert (flashcard--format-cloze flashcard--current-cloze 'reveal)))
-   ((eq flashcard--current-type 'question)
+    (insert (srs--format-cloze srs--current-cloze 'reveal)))
+   ((eq srs--current-type 'question)
     (insert "\n\n---\n\n")
-    (insert flashcard--answer)))
-  (if flashcard--is-cramming
-      (flashcard--cram-reveal-menu)
-    (flashcard--rate-menu)))
+    (insert srs--answer)))
+  (if srs--is-cramming
+      (srs--cram-reveal-menu)
+    (srs--rate-menu)))
 
-(defun flashcard--update-review-history (id grade)
+(defun srs--update-review-history (id grade)
   "Update review history of card with ID.
 
 GRADE is used to calculate the next review deadline according to the
@@ -662,45 +662,45 @@ FSRS algorithm."
           (if last-review-timestamp
               (let* ((difficulty-num (string-to-number difficulty-str))
                      (stability-num (string-to-number stability-str))
-                     (days-since-last-review (flashcard--days-since-timestamp last-review-timestamp))
-                     (retrievability (flashcard--retrievability days-since-last-review stability-num))
-                     (stability (flashcard--stability difficulty-num stability-num retrievability grade))
-                     (difficulty (flashcard--difficulty difficulty-num grade))
-                     (days-til-due (flashcard--days-til-next-review 0.9 stability)))
+                     (days-since-last-review (srs--days-since-timestamp last-review-timestamp))
+                     (retrievability (srs--retrievability days-since-last-review stability-num))
+                     (stability (srs--stability difficulty-num stability-num retrievability grade))
+                     (difficulty (srs--difficulty difficulty-num grade))
+                     (days-til-due (srs--days-til-next-review 0.9 stability)))
                 (goto-char position)
                 (org-set-property "stability" (number-to-string stability))
                 (org-set-property "difficulty" (number-to-string difficulty))
                 (org-set-property "last-review-timestamp" current-timestamp)
                 (org-set-property "next-review-deadline"
                                   (format-time-string "%Y-%m-%dT%H:%M:%S%z"
-                                                      (flashcard--time-add-days (current-time) days-til-due))))
+                                                      (srs--time-add-days (current-time) days-til-due))))
             ;; else (initial review)
-            (let ((initial-stability (flashcard--stability-initial grade))
-                  (initial-difficulty (flashcard--difficulty-initial grade)))
+            (let ((initial-stability (srs--stability-initial grade))
+                  (initial-difficulty (srs--difficulty-initial grade)))
               (goto-char position)
               (org-set-property "stability" (number-to-string initial-stability))
               (org-set-property "difficulty" (number-to-string initial-difficulty))
               (org-set-property "last-review-timestamp" current-timestamp)
               (org-set-property "next-review-deadline"
                                 (format-time-string "%Y-%m-%dT%H:%M:%S%z"
-                                                    (flashcard--time-add-days (current-time)
-                                                                              (flashcard--days-til-next-review 0.9
+                                                    (srs--time-add-days (current-time)
+                                                                              (srs--days-til-next-review 0.9
                                                                                                                initial-stability))))
               (list initial-stability initial-difficulty )))
           (save-buffer)))
       (kill-buffer buffer))))
 
-(defun flashcard--days-since-timestamp (timestamp)
+(defun srs--days-since-timestamp (timestamp)
   "Days (float) since TIMESTAMP."
   (let ((time (encode-time (parse-time-string timestamp))))
     (/ (float-time (time-subtract (current-time) time))
        86400.0)))
 
-(defun flashcard--time-add-days (time days)
+(defun srs--time-add-days (time days)
   "Add DAYS (a decimal number) to TIME."
   (time-add time (seconds-to-time (* days 86400))))
 
-(defun flashcard--due-for-review (tags any-or-all)
+(defun srs--due-for-review (tags any-or-all)
   "Return list of flashcard locations matching DESIGNATOR.
 Filtered by those due for review.
 
@@ -711,27 +711,27 @@ Argument TAGS is used to filter flashcards.
 Argument ANY-OR-ALL determines whether flashcards should match any or all provided tags, if tags are provided."
   (let ((cards (cond
                 ((and (fboundp 'rg) (executable-find "rg"))
-                 (flashcard--due-ripgrep))
+                 (srs--due-ripgrep))
                 ((executable-find "grep")
-                 (flashcard--due-grep))
+                 (srs--due-grep))
                 (t
-                 (flashcard--due-native)))))
+                 (srs--due-native)))))
     (if tags
         (seq-filter (lambda (card)
-                      (flashcard--matches-tag-p (car card) tags any-or-all))
+                      (srs--matches-tag-p (car card) tags any-or-all))
                     cards)
       cards)))
 
-(defun flashcard--due-ripgrep ()
-  "Helper for `flashcard--due-for-review' using ripgrep."
+(defun srs--due-ripgrep ()
+  "Helper for `srs--due-for-review' using ripgrep."
   (save-excursion
-    (let ((locations (flashcard--search-ripgrep))
+    (let ((locations (srs--search-ripgrep))
           (results nil))
       (dolist (location locations results)
         (pcase-let ((`(,file ,line ,id) location))
           (pcase-let ((`(,history-file . ,position) (org-id-find id)))
             ;; Only collect cards due for review
-            (when (or flashcard--is-cramming
+            (when (or srs--is-cramming
                       (with-temp-buffer
                         (org-mode)
                         (insert-file-contents history-file)
@@ -746,19 +746,19 @@ Argument ANY-OR-ALL determines whether flashcards should match any or all provid
                 (goto-line line)
                 (move-end-of-line 1)
                 (push (append (list id file line major-mode)
-                              (flashcard--parse-question-or-cloze-str-at-point))
+                              (srs--parse-question-or-cloze-str-at-point))
                       results)))))))))
 
-(defun flashcard--due-grep ()
-  "Helper for `flashcard--due-for-review' using grep."
+(defun srs--due-grep ()
+  "Helper for `srs--due-for-review' using grep."
   (save-excursion
-    (let ((locations (flashcard--search-grep))
+    (let ((locations (srs--search-grep))
           (results nil))
       (dolist (location locations results)
         (pcase-let ((`(,file ,line ,id) location))
           (pcase-let ((`(,history-file . ,position) (org-id-find id)))
             ;; Only collect cards due for review
-            (when (or flashcard--is-cramming
+            (when (or srs--is-cramming
                       (with-temp-buffer
                         (org-mode)
                         (insert-file-contents history-file)
@@ -773,21 +773,21 @@ Argument ANY-OR-ALL determines whether flashcards should match any or all provid
                 (goto-line line)
                 (move-end-of-line 1)
                 (push (append (list id file line major-mode)
-                              (flashcard--parse-question-or-cloze-str-at-point))
+                              (srs--parse-question-or-cloze-str-at-point))
                       results)))))))))
 
-(defun flashcard--search-grep ()
+(defun srs--search-grep ()
   "Use grep to find flashcard locations."
-  (let ((files (flashcard--get-all-flashcard-file-paths))
+  (let ((files (srs--card-file-paths))
         (results))
     (with-temp-buffer
       (apply #'call-process "grep" nil t nil
-             "--with-filename" "-n" "-e" flashcard-designator
+             "--with-filename" "-n" "-e" srs-designator
              files)
       (goto-char (point-min))
       (thing-at-point 'number)
 
-      (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote flashcard-designator) "[[:space:]]*\\(" flashcard--id-regexp "\\)\\s-*") nil t)
+      (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote srs-designator) "[[:space:]]*\\(" srs--id-regexp "\\)\\s-*") nil t)
         (let* ((file (match-string 1))
                (line (string-to-number (match-string 2)))
                (id (match-string 3)))
@@ -797,18 +797,18 @@ Argument ANY-OR-ALL determines whether flashcards should match any or all provid
                 results))))
     (nreverse results)))
 
-(defun flashcard--search-ripgrep ()
+(defun srs--search-ripgrep ()
   "Use ripgrep to find flashcard locations."
-  (let ((files (flashcard--get-all-flashcard-file-paths))
+  (let ((files (srs--card-file-paths))
         (results))
     (with-temp-buffer
       (apply #'call-process "rg" nil t nil
-             "--with-filename" "-n" "-e" flashcard-designator
+             "--with-filename" "-n" "-e" srs-designator
              files)
       (goto-char (point-min))
       (thing-at-point 'number)
 
-      (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote flashcard-designator) "[[:space:]]*\\(" flashcard--id-regexp "\\)\\s-*") nil t)
+      (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote srs-designator) "[[:space:]]*\\(" srs--id-regexp "\\)\\s-*") nil t)
         (let* ((file (match-string 1))
                (line (string-to-number (match-string 2)))
                (id (match-string 3)))
@@ -818,22 +818,22 @@ Argument ANY-OR-ALL determines whether flashcards should match any or all provid
                 results))))
     (nreverse results)))
 
-(defun flashcard--id-at-point ()
+(defun srs--id-at-point ()
   "Grab id from buffer at point if it matches UUID format."
   (let ((id (buffer-substring-no-properties
              (point)
              (save-excursion
                (skip-chars-forward "^ \t\n")
                (point)))))
-    (when (string-match-p flashcard--id-regexp id)
+    (when (string-match-p srs--id-regexp id)
       id)))
 
-(defun flashcard--due-native ()
+(defun srs--due-native ()
   "Gather cards due for review.
 
 Uses native Emacs search through files."
   (save-excursion
-    (let ((files (flashcard--get-all-flashcard-file-paths))
+    (let ((files (srs--card-file-paths))
           results)
       (dolist (file files results)
         (let ((file-was-open-p (get-file-buffer file))
@@ -847,33 +847,33 @@ Uses native Emacs search through files."
           (with-temp-buffer
             (insert-file-contents file)
             (goto-char (point-min))
-            (while (re-search-forward (concat "^.*" (regexp-quote flashcard-designator)) nil t)
+            (while (re-search-forward (concat "^.*" (regexp-quote srs-designator)) nil t)
               (skip-chars-forward " \t\n\r\f")
-              (let ((id (flashcard--id-at-point))
+              (let ((id (srs--id-at-point))
                     (line (line-number-at-pos)))
                 (when id
                   (pcase-let ((`(,history-file . ,position) (org-id-find id)))
                     ;; Only collect cards due for review
-                    (when (or flashcard--is-cramming
+                    (when (or srs--is-cramming
                               (with-current-buffer (find-file-noselect history-file)
                                 (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
                                   (time-less-p (encode-time (parse-time-string next-review-deadline-str))
                                                (current-time)))))
                       (move-end-of-line 1)
                       (push (append (list id file line saved-major-mode)
-                                    (flashcard--parse-question-or-cloze-str-at-point))
+                                    (srs--parse-question-or-cloze-str-at-point))
                             results))))))))))))
 
-(defun flashcard--store-new ()
+(defun srs--store-new ()
   "Store new flashcard in persistent storage."
   (save-excursion
-    (write-region "\n* Card" nil flashcard-history-file t)
-    (let ((file-was-open-p (get-file-buffer flashcard-history-file))
-          (buf (find-file-noselect flashcard-history-file)))
+    (write-region "\n* Card" nil srs-history-file t)
+    (let ((file-was-open-p (get-file-buffer srs-history-file))
+          (buf (find-file-noselect srs-history-file)))
       (unwind-protect
           (with-current-buffer buf
             (goto-char (point-max))
-            (let ((flashcard-id (org-id-get-create))
+            (let ((card-id (org-id-get-create))
                   (timestamp (format-time-string "%Y-%m-%dT%H:%M:%S%z")))
               (org-set-property "created" timestamp)
               (org-set-property "difficulty" "nil")
@@ -881,11 +881,11 @@ Uses native Emacs search through files."
               (org-set-property "last-review-timestamp" "nil")
               (org-set-property "next-review-deadline" timestamp)
               (save-buffer)
-              flashcard-id))
+              card-id))
         (unless file-was-open-p
           (kill-buffer buf))))))
 
-(defun flashcard--parse-question-or-cloze-str-at-point ()
+(defun srs--parse-question-or-cloze-str-at-point ()
   "Return `(question ,question ,answer) or `(cloze ,cloze).
 Look ahead to find question beginning at nearest nonwhitespace character."
   (save-excursion
@@ -908,16 +908,16 @@ Look ahead to find question beginning at nearest nonwhitespace character."
                      (answer (buffer-substring-no-properties begin-answer end-answer)))
                 (list 'question question-or-cloze-str answer)))))))))
 
-(defun flashcard--mappend (fn the-list)
+(defun srs--mappend (fn the-list)
   "Apply FN to each element of THE-LIST and append the results."
   (apply #'append (mapcar fn the-list)))
 
-(defun flashcard--get-all-flashcard-file-paths ()
-  "Return list of file paths specified by `flashcard-path-list'."
+(defun srs--card-file-paths ()
+  "Return list of file paths specified by `srs-path-list'."
   (seq-filter #'file-regular-p
-              (flashcard--mappend #'file-expand-wildcards flashcard-path-list)))
+              (srs--mappend #'file-expand-wildcards srs-path-list)))
 
-(defun flashcard--comment-marker ()
+(defun srs--comment-marker ()
   "Return comment marker for the current mode, or \"\"."
   (if comment-start
       (cond ((and (= (length (string-trim comment-start)) 1)
@@ -928,11 +928,11 @@ Look ahead to find question beginning at nearest nonwhitespace character."
                  (concat comment-start " "))))
     ""))
 
-(transient-define-prefix flashcard--question-menu ()
+(transient-define-prefix srs--question-menu ()
   "Menu for displaying flashcards (before reveal)."
   :refresh-suffixes t
-  [("r" "Reveal card" flashcard-show-answer)
-   ("q" "Quit reviewing" flashcard-quit-review)])
+  [("r" "Reveal card" srs-show-answer)
+   ("q" "Quit reviewing" srs-quit-review)])
 
 ;; ┌──────────────────────────────────────────────────────────────────────────────────┐
 ;; │ FSRS algorithm implementation for flashcard.el                                   │
@@ -953,93 +953,93 @@ Look ahead to find question beginning at nearest nonwhitespace character."
 ;; ┌───────────┐
 ;; │ Constants │
 ;; └───────────┘
-(defconst flashcard-F (/ 19.0 81.0))
-(defconst flashcard-C -0.5)
-(defconst flashcard-W [0.40255 1.18385 3.173 15.69105 7.1949 0.5345 1.4604 0.0046 1.54575 0.1192
+(defconst srs-F (/ 19.0 81.0))
+(defconst srs-C -0.5)
+(defconst srs-W [0.40255 1.18385 3.173 15.69105 7.1949 0.5345 1.4604 0.0046 1.54575 0.1192
                           1.01925 1.9395 0.11 0.29605 2.2698 0.2315 2.9898 0.51655 0.6621])
-(defmacro flashcard--w (i) "Convenience wrapper for accessing weights via I, the index into `flashcard-W' vector." `(aref ,flashcard-W ,i))
+(defmacro srs--w (i) "Convenience wrapper for accessing weights via I, the index into `srs-W' vector." `(aref ,srs-W ,i))
 
 ;; ┌──────────────────────┐
 ;; │ Days til next review │
 ;; └──────────────────────┘
-(defun flashcard--days-til-next-review (desired-retention stability-of-card)
+(defun srs--days-til-next-review (desired-retention stability-of-card)
   "Days until next review as function of DESIRED-RETENTION and STABILITY-OF-CARD.
-This function is based on the `flashcard--retrievability' function, but
+This function is based on the `srs--retrievability' function, but
 manipulated algebraically."
   (* (/ stability-of-card
-        flashcard-F)
+        srs-F)
      (- (expt desired-retention
-              (/ 1.0 flashcard-C))
+              (/ 1.0 srs-C))
         1)))
 
 ;; ┌────────────────┐
 ;; │ Retrievability │
 ;; └────────────────┘
-(defun flashcard--retrievability (days-since-last-review stability-of-card)
+(defun srs--retrievability (days-since-last-review stability-of-card)
   "Retrievability R in [0,1] - probability of recall.
 
 DAYS-SINCE-LAST-REVIEW and STABILITY-OF-CARD are floats."
   (expt (+ 1.0
-           (* flashcard-F (/ days-since-last-review
+           (* srs-F (/ days-since-last-review
                         stability-of-card)) )
-        flashcard-C))
+        srs-C))
 
 ;; ┌───────────┐
 ;; │ Stability │
 ;; └───────────┘
-(defun flashcard--stability-initial (grade)
+(defun srs--stability-initial (grade)
   "Initial stability of flashcard given first GRADE."
-  (flashcard--w (pcase grade
+  (srs--w (pcase grade
          (:forgot 0)
          (:hard 1)
          (:good 2)
          (:easy 3))))
 
-(defun flashcard--stability-on-success (difficulty stability retrievability grade)
+(defun srs--stability-on-success (difficulty stability retrievability grade)
   "Return new STABILITY of flashcard upon success.
 DIFFICULTY, STABILITY, and RETRIEVABILITY are floats.  GRADE is one of
 {:forgot, :hard, :good, :easy}"
   (let ((t-d (- 11.0 difficulty))
-        (t-s (expt stability (- (flashcard--w 9))))
-        (t-r (- (exp (* (flashcard--w 10)
+        (t-s (expt stability (- (srs--w 9))))
+        (t-r (- (exp (* (srs--w 10)
                         (- 1.0 retrievability)))
                 1))
         (h (pcase grade
-             (:hard (flashcard--w 15))
+             (:hard (srs--w 15))
              (_ 1.0)))
         (b (pcase grade
-             (:easy (flashcard--w 16))
+             (:easy (srs--w 16))
              (_ 1.0)))
-        (c (exp (flashcard--w 8))))
+        (c (exp (srs--w 8))))
     (let ((α (+ 1.0 (* t-d t-s t-r h b c))))
       (* stability α))))
 
-(defun flashcard--stability-on-failure (difficulty stability retrievability)
+(defun srs--stability-on-failure (difficulty stability retrievability)
   "Return new stability of flashcard upon failure.
 DIFFICULTY, STABILITY and RETRIEVABILITY are floats."
   (let ((d-f (expt difficulty
-                   (- (flashcard--w 12))))
+                   (- (srs--w 12))))
         (s-f (- (expt (+ stability 1.0)
-                      (flashcard--w 13))
+                      (srs--w 13))
                 1.0))
-        (r-f (exp (* (flashcard--w 14)
+        (r-f (exp (* (srs--w 14)
                      (- 1.0 retrievability))))
-        (c-f (flashcard--w 11)))
+        (c-f (srs--w 11)))
     (min stability
          (* d-f s-f r-f c-f))))
 
-(defun flashcard--stability (difficulty stability retrievability grade)
+(defun srs--stability (difficulty stability retrievability grade)
   "Return updated stability of flashcard after review.
 DIFFICULTY, STABILITY and RETRIEVABILITY are floats.  GRADE is one of
 {:forgot, :hard, :good, :easy}"
   (pcase grade
-    (:forgot (flashcard--stability-on-failure difficulty stability retrievability))
-    (_ (flashcard--stability-on-success difficulty stability retrievability grade))))
+    (:forgot (srs--stability-on-failure difficulty stability retrievability))
+    (_ (srs--stability-on-success difficulty stability retrievability grade))))
 
 ;; ┌────────────┐
 ;; │ Difficulty │
 ;; └────────────┘
-(defun flashcard--grade-num (grade)
+(defun srs--grade-num (grade)
   "Convert user's self-rating (GRADE) from keyword to number.
 
 :forgot => 1
@@ -1052,39 +1052,39 @@ DIFFICULTY, STABILITY and RETRIEVABILITY are floats.  GRADE is one of
     (:good 3)
     (:easy 4)))
 
-(defun flashcard--difficulty-initial (grade)
+(defun srs--difficulty-initial (grade)
   "Initial difficulty after first review.
 GRADE is a keyword in {:forgot, :hard, :good, :easy}"
-  (1+ (- (flashcard--w 4)
-         (exp (* (flashcard--w 5)
-                 (- (flashcard--grade-num grade)
+  (1+ (- (srs--w 4)
+         (exp (* (srs--w 5)
+                 (- (srs--grade-num grade)
                     1))))))
 
-(defun flashcard--clamp-d (d)
+(defun srs--clamp-d (d)
   "Clamp D between 1.0 and 10.0."
   (max 1.0 (min d 10.0)))
 
-(defun flashcard--difficulty (difficulty grade)
+(defun srs--difficulty (difficulty grade)
   "Return updated DIFFICULTY based on GRADE after review."
-  (flashcard--clamp-d
-   (+ (* (flashcard--w 7)
-         (flashcard--difficulty-initial :easy))
-      (* (- 1.0 (flashcard--w 7))
-         (flashcard--dp difficulty grade)))))
+  (srs--clamp-d
+   (+ (* (srs--w 7)
+         (srs--difficulty-initial :easy))
+      (* (- 1.0 (srs--w 7))
+         (srs--dp difficulty grade)))))
 
-(defun flashcard--dp (difficulty grade)
-  "Helper for `flashcard--difficulty'.
+(defun srs--dp (difficulty grade)
+  "Helper for `srs--difficulty'.
 DIFFICULTY is a float.  GRADE is one of {:forgot, :hard, :good :easy}."
-  (+ difficulty (* (flashcard--delta-d grade)
+  (+ difficulty (* (srs--delta-d grade)
                    (/ (- 10.0 difficulty)
                       9.0))))
 
-(defun flashcard--delta-d (grade)
-  "Helper for `flashcard--difficulty'.
+(defun srs--delta-d (grade)
+  "Helper for `srs--difficulty'.
 GRADE is one of {:forgot, :hard, :good :easy}."
-  (* (- (flashcard--w 6))
-     (- (flashcard--grade-num grade)
+  (* (- (srs--w 6))
+     (- (srs--grade-num grade)
         3.0)))
 
-(provide 'flashcard)
-;;; flashcard.el ends here
+(provide 'srs)
+;;; srs.el ends here
