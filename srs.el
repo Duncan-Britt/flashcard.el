@@ -390,56 +390,51 @@ before question, and inserts flashcard into persistant storage."
         ;; else
         (user-error "No flashcard %s <ID> on this line" srs-designator)))))
 
-(defun srs-review (&optional filter-by-tags-p)
+(defun srs-review (&optional prefix-arg)
   "Review flashcards which are due.
 When FILTER-BY-TAGS-P is non nil, such as when invoked with a prefix
 arugment, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
-  (setq srs--is-cramming nil)
-  (setq srs--window-config-before-review (current-window-configuration))
-  (let ((tags)
-        (any-or-all-case))
-    (when filter-by-tags-p
-      (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
-        (setq tags x)
-        (setq any-or-all-case y)))
-    (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
-    (if srs--review-queue
-        (srs--review-next-card)
-      (message "No flashcards due today"))))
 
-(transient-define-suffix srs-review-suffix (&optional args)
-  "Rate the just-revealed card from transient menu.
-Then continue."
-  (interactive (list (transient-args transient-current-command)))
-  (let ((filter-by-tags-p (transient-arg-value "--filter" args)))
-    (srs-review filter-by-tags-p)))
+  (let ((filter-by-tags-p (if transient-current-prefix
+                              (let ((args (transient-args transient-current-command)))
+                                (transient-arg-value "--filter" args))
+                            prefix-arg)))
+    (setq srs--is-cramming nil)
+    (setq srs--window-config-before-review (current-window-configuration))
+    (let ((tags)
+          (any-or-all-case))
+      (when filter-by-tags-p
+        (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
+          (setq tags x)
+          (setq any-or-all-case y)))
+      (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
+      (if srs--review-queue
+          (srs--review-next-card)
+        (message "No flashcards due today")))))
 
-(transient-define-suffix srs-cram-suffix (&optional args)
-  "Rate the just-revealed card from transient menu.
-Then continue."
-  (interactive (list (transient-args transient-current-command)))
-  (let ((filter-by-tags-p (transient-arg-value "--filter" args)))
-    (srs-cram filter-by-tags-p)))
-
-(defun srs-cram (&optional filter-by-tags-p)
+(transient-define-suffix srs-cram (&optional prefix-arg)
   "Cram flashcards.
 Like `srs-review', but doesn't update flashcard review history.  When
 FILTER-BY-TAGS-P is non nil, such as when invoked with a prefix
 arugment, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
-  (setq srs--is-cramming t)
-  (setq srs--window-config-before-review (current-window-configuration))
-  (let ((tags)
-        (any-or-all-case))
-    (when filter-by-tags-p
-      (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
-        (setq tags x)
-        (setq any-or-all-case y)))
-    (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
-    (if srs--review-queue
-        (srs--review-next-card)
-      (message "Found 0 flashcards"))))
+  (let ((filter-by-tags-p (if transient-current-prefix
+                              (let ((args (transient-args transient-current-command)))
+                                (transient-arg-value "--filter" args))
+                            prefix-arg)))
+    (setq srs--is-cramming t)
+    (setq srs--window-config-before-review (current-window-configuration))
+    (let ((tags)
+          (any-or-all-case))
+      (when filter-by-tags-p
+        (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
+          (setq tags x)
+          (setq any-or-all-case y)))
+      (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
+      (if srs--review-queue
+          (srs--review-next-card)
+        (message "Found 0 flashcards")))))
 
 (defun srs--prompt-read-tags ()
   "Prompt the user for tags and return selection."
@@ -449,20 +444,17 @@ arugment, prompt the user for tags by which to filter the flashcards."
                           "Tags: " (srs--all-known-tags))))
     (list tags any-or-all-case)))
 
-(transient-define-suffix srs-browse-suffix (&optional args)
-  "Rate the just-revealed card from transient menu.
-Then continue."
-  (interactive (list (transient-args transient-current-command)))
-  (let ((filter-by-tags-p (transient-arg-value "--filter" args)))
-    (srs-browse filter-by-tags-p)))
-
-(defun srs-browse (&optional filter-by-tags-p)
+(transient-define-suffix srs-browse (&optional prefix-arg)
   "Browse all flashcards in an occur-like buffer.
 FILTER-BY-TAGS-P, (which can be set to non-NIL by using the prefix
 argument when called interactively), when non-NIL, will prompt the user
 for tags by which to filter the results."
   (interactive "P")
-  (let ((tags)
+  (let ((filter-by-tags-p (if transient-current-prefix
+                              (let ((args (transient-args transient-current-command)))
+                                (transient-arg-value "--filter" args))
+                            prefix-arg))
+        (tags)
         (any-or-all-case))
     (when filter-by-tags-p
       (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
@@ -566,7 +558,7 @@ TYPE is either 'HIDE or 'REVEAL."
       (_ (error "Unrecognized flashcard format: %s" card)))))
 
 (transient-define-suffix srs-rate (&optional args)
-  "Rate the just-revealed card from transient menu.
+  "Rate the just-revealed card.
 Then continue."
   (interactive (list (transient-args transient-current-command)))
   (unless srs--is-cramming
@@ -589,30 +581,28 @@ Then continue."
   (find-file srs--current-file)
   (goto-line srs--current-line))
 
-(transient-define-suffix srs--quit-review-suffix (&optional args)
-  "Quit flashcard review from transient menu."
+(transient-define-suffix srs-quit-review (&optional args)
+  "Quit the current review session."
   (interactive (list (transient-args transient-current-command)))
-  (srs-quit-review)
-  (when (transient-arg-value "--visit-source" args)
+  (setq srs--is-cramming nil)
+  (kill-buffer "*srs*")
+  (when (get-buffer-window "*srs*")
+    (delete-window (get-buffer-window "*srs*")))
+  (set-window-configuration srs--window-config-before-review)
+  (when (and transient-current-prefix (transient-arg-value "--visit-source" args))
     (srs--visit-source)))
-
-(transient-define-suffix srs--visit-source-suffix ()
-  "Exit flashcard review and visit source."
-  (interactive)
-  (srs-quit-review)
-  (srs--visit-source))
 
 (transient-define-prefix srs-menu ()
   "Transient menu for srs.el."
   :refresh-suffixes t
   [["Review"
-    ("r" "Review due cards" srs-review-suffix)
-    ("c" "Cram cards" srs-cram-suffix)]
+    ("r" "Review due cards" srs-review)
+    ("c" "Cram cards" srs-cram)]
    ["Edit"
     ("m" "Make flashcard at point" srs-card-make-at-point)
     ("d" "Delete flashcard at point" srs-card-delete-at-point)
     ("t" "Edit tags for flashcard at point" srs-card-edit-tags)
-    ("b" "Browse flashcards" srs-browse-suffix)]]
+    ("b" "Browse flashcards" srs-browse)]]
   ["Options"
    ("-f" "Filter by tag(s)" "--filter")])
 
@@ -625,7 +615,7 @@ Then continue."
     ("h" "Hard" srs-rate)
     ("f" "Forgot" srs-rate)]
    ["Abort"
-    ("q" "Quit without rating card" srs--quit-review-suffix)]]
+    ("q" "Quit without rating card" srs-quit-review)]]
   ["After rating or abort"
    ("-s" "Visit source (quit reviewing)" "--visit-source")])
 
@@ -635,31 +625,11 @@ Then continue."
   [["Continue"
     ("n" "Next card" srs-rate)]
    ["Exit"
-    ("q" "Quit" srs--quit-review-suffix)
-    ("s" "Visit source (quit reviewing)" srs--visit-source-suffix)]])
-
-(defun srs-quit-review ()
-  "Quit the current review session."
-  (interactive)
-  (setq srs--is-cramming nil)
-  (kill-buffer "*srs*")
-  (when (get-buffer-window "*srs*")
-    (delete-window (get-buffer-window "*srs*")))
-  (set-window-configuration srs--window-config-before-review))
-
-(defun srs-show-answer ()
-  "Reveal the answer to the current flashcard."
-  (interactive)
-  (cond
-   ((eq srs--current-type 'cloze)
-    (erase-buffer)
-    (insert (srs--format-cloze srs--current-cloze 'reveal)))
-   ((eq srs--current-type 'question)
-    (insert "\n\n---\n\n")
-    (insert srs--answer)))
-  (if srs--is-cramming
-      (srs--cram-reveal-menu)
-    (srs--rate-menu)))
+    ("q" "Quit" srs-quit-review)
+    ("s" "Visit source (quit reviewing)" (lambda ()
+                                           (interactive)
+                                           (srs-quit-review)
+                                           (srs--visit-source)))]])
 
 (defun srs--update-review-history (id grade)
   "Update review history of card with ID.
@@ -947,7 +917,18 @@ Look ahead to find question beginning at nearest nonwhitespace character."
 (transient-define-prefix srs--question-menu ()
   "Menu for displaying flashcards (before reveal)."
   :refresh-suffixes t
-  [("r" "Reveal card" srs-show-answer)
+  [("r" "Reveal card" (lambda ()
+                        (interactive)
+                        (cond
+                         ((eq srs--current-type 'cloze)
+                          (erase-buffer)
+                          (insert (srs--format-cloze srs--current-cloze 'reveal)))
+                         ((eq srs--current-type 'question)
+                          (insert "\n\n---\n\n")
+                          (insert srs--answer)))
+                        (if srs--is-cramming
+                            (srs--cram-reveal-menu)
+                          (srs--rate-menu))))
    ("q" "Quit reviewing" srs-quit-review)])
 
 ;; ┌──────────────────────────────────────────────────────────────────────────────────┐
