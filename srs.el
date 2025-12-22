@@ -141,6 +141,22 @@
 ;; M-x srs-menu provides a transient menu for accessing
 ;; srs commands.
 
+;; ┌───────────────┐
+;; │ Related works │
+;; └───────────────┘
+;; https://elpa.nongnu.org/nongnu/doc/gnosis.html
+;; https://github.com/abo-abo/pamparam
+;; https://github.com/l3kn/org-fc
+;; https://github.com/bohonghuang/org-srs
+;; https://orgmode.org/worg/org-contrib/org-drill.html
+;; https://eding.sourceforge.net/
+;; https://github.com/anki-editor/anki-editor
+;; https://github.com/chenyanming/anki.el
+;; https://github.com/eyeinsky/org-anki
+;; https://github.com/taksatou/flashcard.el
+;; http://salvi.chaosnet.org/snippets/flashcard-old.html
+;; https://github.com/open-spaced-repetition/lisp-fsrs
+
 ;;; Code:
 (require 'transient)
 ;; ┌────────┐
