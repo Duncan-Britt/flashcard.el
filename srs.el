@@ -30,9 +30,7 @@
 ;; creating and reviewing flashcards.  Flashcards can be embedded
 ;; among your notes, or any text file, so long as you tell
 ;; `srs.el' where to look for them--by setting
-;; `srs-path-list'. Implements Free Spaced Repetition Scheduler
-;; (FSRS) algorithm.
-;; https://github.com/open-spaced-repetition/fsrs4anki/wiki/ABC-of-FSRS
+;; `srs-path-list'.
 
 ;; ┌──────────────┐
 ;; │ Installation │
@@ -952,10 +950,10 @@ Look ahead to find question beginning at nearest nonwhitespace character."
 ;; │ difficulty D in [1,10] - how hard it is to recall, stored in card                │
 ;; │                                                                                  │
 ;; │ User's self-rating is called the `grade':                                        │
-;; │ 1 - "forgot"                                                                     │
-;; │ 2 - "hard"                                                                       │
-;; │ 3 - "good"                                                                       │
-;; │ 4 - "easy"                                                                       │
+;; │ 1 <-> :forgot                                                                    │
+;; │ 2 <-> :hard                                                                      │
+;; │ 3 <-> :good                                                                      │
+;; │ 4 <-> :easy                                                                      │
 ;; │                                                                                  │
 ;; │ (2025-12-17) This implementation was based off                                   │
 ;; │ https://borretti.me/article/implementing-fsrs-in-100-lines                       │
