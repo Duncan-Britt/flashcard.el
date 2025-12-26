@@ -628,19 +628,25 @@ Then continue."
    ["Abort"
     ("q" "Quit without rating card" srs-quit-review)]]
   ["After rating or abort"
-   ("-s" "Visit source (quit reviewing)" "--visit-source")])
+   ("-s" "Visit source (quit reviewing)" "--visit-source")]
+  ["Scroll"
+   ("n" "Scroll down" next-line :transient t)
+   ("p" "Scroll up" previous-line :transient t)])
 
 (transient-define-prefix srs--cram-reveal-menu ()
   "Menu for flashcards once revealed."
   :refresh-suffixes t
   [["Continue"
-    ("n" "Next card" srs-rate)]
+    ("c" "Next card" srs-rate)]
    ["Exit"
     ("q" "Quit" srs-quit-review)
     ("s" "Visit source (quit reviewing)" (lambda ()
                                            (interactive)
                                            (srs-quit-review)
-                                           (srs--visit-source)))]])
+                                           (srs--visit-source)))]]
+  ["Scroll"
+   ("n" "Scroll down" next-line :transient t)
+   ("p" "Scroll up" previous-line :transient t)])
 
 (defun srs--update-review-history (id grade)
   "Update review history of card with ID.
@@ -940,7 +946,9 @@ Look ahead to find question beginning at nearest nonwhitespace character."
                         (if srs--is-cramming
                             (srs--cram-reveal-menu)
                           (srs--rate-menu))))
-   ("q" "Quit reviewing" srs-quit-review)])
+   ("q" "Quit reviewing" srs-quit-review)]
+  [("n" "Scroll down" next-line :transient t)
+   ("p" "Scroll up" previous-line :transient t)])
 
 ;; ┌──────────────────────────────────────────────────────────────────────────────────┐
 ;; │ FSRS algorithm implementation for flashcard.el                                   │
