@@ -42,6 +42,12 @@
 ;;    :config
 ;;    (add-to-list 'srs-path-list (expand-file-name "~/notes/*.org")))
 
+;; ┌─────────────────────────┐
+;; │ Usage -- Transient Menu │
+;; └─────────────────────────┘
+;; M-x srs-menu provides a transient menu for accessing
+;; srs commands described below.
+
 ;; ┌────────────────────────────┐
 ;; │ Usage -- Making Flashcards │
 ;; └────────────────────────────┘
@@ -132,12 +138,6 @@
 ;;  M-x srs-card-delete-at-point
 ;;
 ;; Run this command with your cursor is over the line with <DESIGNATOR>: <ID>
-
-;; ┌─────────────────────────┐
-;; │ Usage -- Transient Menu │
-;; └─────────────────────────┘
-;; M-x srs-menu provides a transient menu for accessing
-;; srs commands.
 
 ;; ┌───────────────┐
 ;; │ Related works │
@@ -405,8 +405,8 @@ before question, and inserts flashcard into persistant storage."
 
 (defun srs-review (&optional prefix-arg)
   "Review flashcards which are due.
-When FILTER-BY-TAGS-P is non nil, such as when invoked with a prefix
-arugment, prompt the user for tags by which to filter the flashcards."
+When FILTER-BY-TAGS-P is non nil, such as when invoked with a
+PREFIX-ARG, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
 
   (let ((filter-by-tags-p (if transient-current-prefix
@@ -523,7 +523,7 @@ TYPE is either 'HIDE or 'REVEAL."
                                cloze-str))))
 
 (defun srs--tags (card-id)
-  "Return list of tags for card with ID."
+  "Return list of tags for card with CARD-ID."
   (let ((history-entry (org-id-find card-id)))
     (when history-entry
       (pcase-let ((`(,history-file . ,position) history-entry))
