@@ -192,12 +192,12 @@ Essential for effective spaced repetition."
 ;; ┌────────────┐
 ;; │ End custom │
 ;; └────────────┘
-(defvar-local srs--current-id nil)
-(defvar-local srs--current-type nil)
-(defvar-local srs--answer nil)
-(defvar-local srs--current-cloze nil)
-(defvar-local srs--current-question nil)
-
+(defvar srs--current-id nil)
+(defvar srs--current-type nil)
+(defvar srs--answer nil)
+(defvar srs--current-cloze nil)
+(defvar srs--current-question nil)
+(defvar srs--review-states-history nil "Stack of previous buffer states.")
 (defvar srs--review-queue nil "Queue of flashcards to review.")
 (defvar srs--window-config-before-review nil "Saved window configuration to be restored after reviewing flashcards.")
 (defvar srs--current-file nil "Source file of flashcard during reviewing.")
@@ -408,7 +408,7 @@ before question, and inserts flashcard into persistant storage."
 When FILTER-BY-TAGS-P is non nil, such as when invoked with a
 PREFIX-ARG, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
-
+  (setq srs--review-states-history nil)
   (let ((filter-by-tags-p (if transient-current-prefix
                               (let ((args (transient-args transient-current-command)))
                                 (transient-arg-value "--filter" args))
@@ -432,6 +432,7 @@ Like `srs-review', but doesn't update flashcard review history.  When
 FILTER-BY-TAGS-P is non nil, such as when invoked with a prefix
 arugment, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
+  (setq srs--review-states-history nil)
   (let ((filter-by-tags-p (if transient-current-prefix
                               (let ((args (transient-args transient-current-command)))
                                 (transient-arg-value "--filter" args))
@@ -550,20 +551,20 @@ TYPE is either 'HIDE or 'REVEAL."
       (`(,id ,file ,line ,mode cloze ,cloze)
        (funcall mode)
        (srs-question-mode 1)
-       (setq-local srs--current-id id)
+       (setq srs--current-id id)
        (setq srs--current-file file)
        (setq srs--current-line line)
-       (setq-local srs--current-type 'cloze)
-       (setq-local srs--current-cloze cloze))
+       (setq srs--current-type 'cloze)
+       (setq srs--current-cloze cloze))
       (`(,id ,file ,line ,mode question ,question ,answer)
        (funcall mode)
        (srs-question-mode 1)
-       (setq-local srs--answer answer)
-       (setq-local srs--current-id id)
+       (setq srs--answer answer)
+       (setq srs--current-id id)
        (setq srs--current-file file)
        (setq srs--current-line line)
-       (setq-local srs--current-type 'question)
-       (setq-local srs--current-question question))
+       (setq srs--current-type 'question)
+       (setq srs--current-question question))
       (_ (error "Unrecognized flashcard format: %s" card)))
     (srs--render-buffer)))
 
@@ -729,42 +730,44 @@ Argument ANY-OR-ALL determines whether flashcards should match any or all provid
   "Use grep to find flashcard locations."
   (let ((files (srs--card-file-paths))
         (results))
-    (with-temp-buffer
-      (apply #'call-process "grep" nil t nil
-             "--with-filename" "-n" "-e" srs-designator
-             files)
-      (goto-char (point-min))
-      (thing-at-point 'number)
+    (when files
+      (with-temp-buffer
+        (apply #'call-process "grep" nil t nil
+               "--with-filename" "-n" "-e" srs-designator
+               files)
+        (goto-char (point-min))
+        (thing-at-point 'number)
 
-      (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote srs-designator) "[[:space:]]*\\(" srs--id-regexp "\\)\\s-*") nil t)
-        (let* ((file (match-string 1))
-               (line (string-to-number (match-string 2)))
-               (id (match-string 3)))
-          (push (list file
-                      line
-                      id)
-                results))))
+        (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote srs-designator) "[[:space:]]*\\(" srs--id-regexp "\\)\\s-*") nil t)
+          (let* ((file (match-string 1))
+                 (line (string-to-number (match-string 2)))
+                 (id (match-string 3)))
+            (push (list file
+                        line
+                        id)
+                  results)))))
     (nreverse results)))
 
 (defun srs--search-ripgrep ()
   "Use ripgrep to find flashcard locations."
   (let ((files (srs--card-file-paths))
         (results))
-    (with-temp-buffer
-      (apply #'call-process "rg" nil t nil
-             "--with-filename" "-n" "-e" srs-designator
-             files)
-      (goto-char (point-min))
-      (thing-at-point 'number)
+    (when files
+      (with-temp-buffer
+        (apply #'call-process "rg" nil t nil
+               "--with-filename" "-n" "-e" srs-designator
+               files)
+        (goto-char (point-min))
+        (thing-at-point 'number)
 
-      (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote srs-designator) "[[:space:]]*\\(" srs--id-regexp "\\)\\s-*") nil t)
-        (let* ((file (match-string 1))
-               (line (string-to-number (match-string 2)))
-               (id (match-string 3)))
-          (push (list file
-                      line
-                      id)
-                results))))
+        (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote srs-designator) "[[:space:]]*\\(" srs--id-regexp "\\)\\s-*") nil t)
+          (let* ((file (match-string 1))
+                 (line (string-to-number (match-string 2)))
+                 (id (match-string 3)))
+            (push (list file
+                        line
+                        id)
+                  results)))))
     (nreverse results)))
 
 (defun srs--id-at-point ()
@@ -863,8 +866,18 @@ Look ahead to find question beginning at nearest nonwhitespace character."
 
 (defun srs--card-file-paths ()
   "Return list of file paths specified by `srs-path-list'."
-  (seq-filter #'file-regular-p
-              (srs--mappend #'file-expand-wildcards srs-path-list)))
+  (if-let (result (seq-filter #'file-regular-p
+                              (srs--mappend #'file-expand-wildcards srs-path-list)))
+      result
+    (display-warning 'srs
+                     (concat "No files found in `srs-path-list'.\n"
+                             "Use (add-to-list 'srs-path-list \"wherever/you/want/to/put/flashcards/\")\n"
+                             "Then, if you haven't already, make some flashcards by\n"
+                             "writting a question and answer separated by an empty line\n"
+                             "and, with your cursor on the start of the question, running\n"
+                             "    M-x srs-card-make-at-point")
+                     :warning)
+    nil))
 
 (defun srs--comment-marker ()
   "Return comment marker for the current mode, or \"\"."
@@ -880,25 +893,75 @@ Look ahead to find question beginning at nearest nonwhitespace character."
 ;; ┌─────┐
 ;; │ New │
 ;; └─────┘
+(defun srs-review-back ()
+  "Go back to previous review state."
+  (interactive)
+  (when srs--review-states-history
+    (let ((prev-state (pop srs--review-states-history)))
+      (srs--restore-state prev-state))))
+
+(defun srs--review-save-state ()
+  "Save current buffer state to history."
+  (push (list :id srs--current-id
+              :type srs--current-type
+              :question srs--current-question
+              :answer srs--answer
+              :cloze srs--current-cloze
+              :file srs--current-file
+              :line srs--current-line
+              :mode (cond (srs-question-mode 'question)
+                         (srs-review-answer-mode 'review-answer)
+                         (srs-cram-answer-mode 'cram-answer))
+              :buffer-contents (buffer-substring-no-properties (point-min) (point-max))
+              :queue srs--review-queue
+              :is-cramming srs--is-cramming)
+        srs--review-states-history))
+
+(defun srs--restore-state (state)
+  "Restore buffer state from STATE."
+  (let ((inhibit-read-only t))
+    (erase-buffer)
+    (insert (plist-get state :buffer-contents))
+
+    ;; Restore all the variables
+    (setq srs--current-id (plist-get state :id))
+    (setq srs--current-type (plist-get state :type))
+    (setq srs--current-question (plist-get state :question))
+    (setq srs--answer (plist-get state :answer))
+    (setq srs--current-cloze (plist-get state :cloze))
+    (setq srs--current-file (plist-get state :file))
+    (setq srs--current-line (plist-get state :line))
+    (setq srs--review-queue (plist-get state :queue))
+    (setq srs--is-cramming (plist-get state :is-cramming))
+
+    ;; Restore the appropriate minor mode
+    (srs-question-mode -1)
+    (srs-review-answer-mode -1)
+    (srs-cram-answer-mode -1)
+
+    (pcase (plist-get state :mode)
+      ('question (srs-question-mode 1))
+      ('review-answer (srs-review-answer-mode 1))
+      ('cram-answer (srs-cram-answer-mode 1)))))
+
 (defun srs--render-buffer ()
   "Render the *srs* buffer based on current state."
   (let ((inhibit-read-only t))
     (erase-buffer)
-
+    (srs--insert-keybindings)
+    (insert "\n")
+    (when-let ((tags (srs--tags srs--current-id)))
+      (insert "Tags: " (string-join tags ", ") "\n\n"))
+    (let ((comment-start (or comment-start "|")))
+      (comment-region (point-min) (point-max)))
     ;; Insert keybindings based on mode
     (cond
      (srs-question-mode
-      (srs--insert-keybindings)
-      (when-let ((tags (srs--tags srs--current-id)))
-        (insert "Tags: " (string-join tags ", ") "\n\n"))
       (pcase srs--current-type
         ('cloze (insert (srs--format-cloze srs--current-cloze 'hide)))
         ('question (insert srs--current-question))))
 
      (srs-review-answer-mode
-      (srs--insert-keybindings)
-      (when-let ((tags (srs--tags srs--current-id)))
-        (insert "Tags: " (string-join tags ", ") "\n\n"))
       (pcase srs--current-type
         ('cloze (insert (srs--format-cloze srs--current-cloze 'reveal)))
         ('question
@@ -907,9 +970,6 @@ Look ahead to find question beginning at nearest nonwhitespace character."
          (insert srs--answer))))
 
      (srs-cram-answer-mode
-      (srs--insert-keybindings)
-      (when-let ((tags (srs--tags srs--current-id)))
-        (insert "Tags: " (string-join tags ", ") "\n\n"))
       (pcase srs--current-type
         ('cloze (insert (srs--format-cloze srs--current-cloze 'reveal)))
         ('question
@@ -927,7 +987,11 @@ Look ahead to find question beginning at nearest nonwhitespace character."
         (concat (substitute-command-keys "\\[srs-reveal-answer]")
                 " ⇒ Reveal answer")
         (concat (substitute-command-keys "\\[srs-quit-review]")
-                " ⇒ Quit review"))))
+                " ⇒ Quit review")
+        (concat (substitute-command-keys "\\[srs-review-back]")
+                " ⇒ Go back")
+        (concat (substitute-command-keys "\\[srs-next-card]")
+                " ⇒ Skip card"))))
 
      (srs-review-answer-mode
       (insert-rectangle
@@ -943,7 +1007,11 @@ Look ahead to find question beginning at nearest nonwhitespace character."
         (concat (substitute-command-keys "\\[srs-quit-review]")
                 " ⇒ Quit review")
         (concat (substitute-command-keys "\\[srs-visit-card-source]")
-                " ⇒ Visit card source"))))
+                " ⇒ Visit card source")
+        (concat (substitute-command-keys "\\[srs-review-back]")
+                " ⇒ Go back")
+        (concat (substitute-command-keys "\\[srs-next-card]")
+                " ⇒ Skip rating"))))
 
      (srs-cram-answer-mode
       (insert-rectangle
@@ -953,7 +1021,9 @@ Look ahead to find question beginning at nearest nonwhitespace character."
         (concat (substitute-command-keys "\\[srs-quit-review]")
                 " ⇒ Quit review")
         (concat (substitute-command-keys "\\[srs-visit-card-source]")
-                " ⇒ Visit card source")))))
+                " ⇒ Visit card source")
+        (concat (substitute-command-keys "\\[srs-review-back]")
+                " ⇒ Go back")))))
 
     ;; Align the ⇒ symbols
     (align-regexp (point-min) (point-max) "\\(\\s-*\\)⇒")
@@ -962,6 +1032,7 @@ Look ahead to find question beginning at nearest nonwhitespace character."
 (defun srs-reveal-answer ()
   "Reveal the answer and switch to appropriate answer mode."
   (interactive)
+  (srs--review-save-state)
   (srs-question-mode -1)
   (if srs--is-cramming
       (srs-cram-answer-mode 1)
@@ -978,9 +1049,9 @@ Look ahead to find question beginning at nearest nonwhitespace character."
 (defun srs-next-card ()
   "Proceed to the next card in the queue."
   (interactive)
+  (srs--review-save-state)
   (srs-review-answer-mode -1)
   (srs-cram-answer-mode -1)
-
   (if srs--review-queue
       (srs--review-next-card)
     (srs-quit-review)))
@@ -1010,29 +1081,32 @@ Look ahead to find question beginning at nearest nonwhitespace character."
 ;; └─────────┘
 (defvar srs-question-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "q") 'srs-quit-review)
-    (define-key map (kbd "r") 'srs-reveal-answer)
-    (define-key map (kbd "SPC") 'srs-reveal-answer)
+    (define-key map (kbd "C-c q") 'srs-quit-review)
+    (define-key map (kbd "C-c r") 'srs-reveal-answer)
+    (define-key map (kbd "C-c b") 'srs-review-back)
+    (define-key map (kbd "C-c s") 'srs-next-card)
     map)
   "Keymap for `srs-question-mode'.")
 
 (defvar srs-review-answer-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "e") 'srs-rate-easy)
-    (define-key map (kbd "g") 'srs-rate-good)
-    (define-key map (kbd "h") 'srs-rate-hard)
-    (define-key map (kbd "f") 'srs-rate-forgot)
-    (define-key map (kbd "q") 'srs-quit-review)
-    (define-key map (kbd "s") 'srs-visit-card-source)
+    (define-key map (kbd "C-c e") 'srs-rate-easy)
+    (define-key map (kbd "C-c g") 'srs-rate-good)
+    (define-key map (kbd "C-c h") 'srs-rate-hard)
+    (define-key map (kbd "C-c f") 'srs-rate-forgot)
+    (define-key map (kbd "C-c q") 'srs-quit-review)
+    (define-key map (kbd "C-c v") 'srs-visit-card-source)
+    (define-key map (kbd "C-c b") 'srs-review-back)
+    (define-key map (kbd "C-c s") 'srs-next-card)
     map)
   "Keymap for `srs-review-answer-mode'.")
 
 (defvar srs-cram-answer-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "n") 'srs-next-card)
-    (define-key map (kbd "SPC") 'srs-next-card)
-    (define-key map (kbd "q") 'srs-quit-review)
-    (define-key map (kbd "s") 'srs-visit-card-source)
+    (define-key map (kbd "C-c n") 'srs-next-card)
+    (define-key map (kbd "C-c q") 'srs-quit-review)
+    (define-key map (kbd "C-c v") 'srs-visit-card-source)
+    (define-key map (kbd "C-c b") 'srs-review-back)
     map)
   "Keymap for `srs-cram-answer-mode'.")
 
