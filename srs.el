@@ -195,6 +195,8 @@ Essential for effective spaced repetition."
 (defvar-local srs--current-id nil)
 (defvar-local srs--current-type nil)
 (defvar-local srs--answer nil)
+(defvar-local srs--current-cloze nil)
+(defvar-local srs--current-question nil)
 
 (defvar srs--review-queue nil "Queue of flashcards to review.")
 (defvar srs--window-config-before-review nil "Saved window configuration to be restored after reviewing flashcards.")
@@ -538,70 +540,45 @@ TYPE is either 'HIDE or 'REVEAL."
 
 (defun srs--review-card (card)
   "Review CARD."
-  (delete-other-windows)
   (let* ((buffer-name "*srs*")
          (buffer (get-buffer-create buffer-name)))
     (switch-to-buffer buffer)
-    (erase-buffer)
+    (srs-question-mode -1)
+    (srs-review-answer-mode -1)
+    (srs-cram-answer-mode -1)
     (pcase card
       (`(,id ,file ,line ,mode cloze ,cloze)
        (funcall mode)
-       (srs--question-menu)
+       (srs-question-mode 1)
        (setq-local srs--current-id id)
        (setq srs--current-file file)
        (setq srs--current-line line)
        (setq-local srs--current-type 'cloze)
-       (setq-local srs--current-cloze cloze)
-       (when-let ((tags (srs--tags id)))
-         (insert "Tags: " (string-join tags ", ") "\n\n"))
-       (insert (srs--format-cloze cloze 'hide)))
+       (setq-local srs--current-cloze cloze))
       (`(,id ,file ,line ,mode question ,question ,answer)
        (funcall mode)
-       (srs--question-menu)
+       (srs-question-mode 1)
        (setq-local srs--answer answer)
        (setq-local srs--current-id id)
        (setq srs--current-file file)
        (setq srs--current-line line)
        (setq-local srs--current-type 'question)
-       (when-let ((tags (srs--tags id)))
-         (insert "Tags: " (string-join tags ", ") "\n\n"))
-       (insert question))
-      (_ (error "Unrecognized flashcard format: %s" card)))))
+       (setq-local srs--current-question question))
+      (_ (error "Unrecognized flashcard format: %s" card)))
+    (srs--render-buffer)))
 
-(transient-define-suffix srs-rate (&optional args)
-  "Rate the just-revealed card.
-Then continue."
-  (interactive (list (transient-args transient-current-command)))
-  (unless srs--is-cramming
-    (let ((grade (pcase-exhaustive (this-command-keys)
-                   ("e" :easy)
-                   ("g" :good)
-                   ("h" :hard)
-                   ("f" :forgot))))
-      (srs--update-review-history srs--current-id grade)))
-  (let ((visit-source-p (transient-arg-value "--visit-source" args)))
-    (if (and srs--review-queue
-             (not visit-source-p))
-        (srs--review-next-card)
-      (srs-quit-review)
-      (when visit-source-p
-        (srs--visit-source)))))
-
-(defun srs--visit-source ()
+(defun srs-visit-card-source ()
   "Visit source file of current flashcard."
-  (find-file srs--current-file)
+  (interactive)
+  (find-file-other-window srs--current-file)
   (goto-line srs--current-line))
 
-(transient-define-suffix srs-quit-review (&optional args)
+(defun srs-quit-review ()
   "Quit the current review session."
-  (interactive (list (transient-args transient-current-command)))
+  (interactive)
   (setq srs--is-cramming nil)
   (kill-buffer "*srs*")
-  (when (get-buffer-window "*srs*")
-    (delete-window (get-buffer-window "*srs*")))
-  (set-window-configuration srs--window-config-before-review)
-  (when (and transient-current-prefix (transient-arg-value "--visit-source" args))
-    (srs--visit-source)))
+  (set-window-configuration srs--window-config-before-review))
 
 (transient-define-prefix srs-menu ()
   "Transient menu for srs.el."
@@ -616,37 +593,6 @@ Then continue."
     ("b" "Browse flashcards" srs-browse)]]
   ["Options"
    ("-f" "Filter by tag(s)" "--filter")])
-
-(transient-define-prefix srs--rate-menu ()
-  "Menu for flashcards once revealed."
-  :refresh-suffixes t
-  [["Rating"
-    ("e" "Easy" srs-rate)
-    ("g" "Good" srs-rate)
-    ("h" "Hard" srs-rate)
-    ("f" "Forgot" srs-rate)]
-   ["Abort"
-    ("q" "Quit without rating card" srs-quit-review)]]
-  ["After rating or abort"
-   ("-s" "Visit source (quit reviewing)" "--visit-source")]
-  ["Scroll"
-   ("n" "Scroll down" next-line :transient t)
-   ("p" "Scroll up" previous-line :transient t)])
-
-(transient-define-prefix srs--cram-reveal-menu ()
-  "Menu for flashcards once revealed."
-  :refresh-suffixes t
-  [["Continue"
-    ("c" "Next card" srs-rate)]
-   ["Exit"
-    ("q" "Quit" srs-quit-review)
-    ("s" "Visit source (quit reviewing)" (lambda ()
-                                           (interactive)
-                                           (srs-quit-review)
-                                           (srs--visit-source)))]]
-  ["Scroll"
-   ("n" "Scroll down" next-line :transient t)
-   ("p" "Scroll up" previous-line :transient t)])
 
 (defun srs--update-review-history (id grade)
   "Update review history of card with ID.
@@ -931,24 +877,185 @@ Look ahead to find question beginning at nearest nonwhitespace character."
                  (concat comment-start " "))))
     ""))
 
-(transient-define-prefix srs--question-menu ()
-  "Menu for displaying flashcards (before reveal)."
-  :refresh-suffixes t
-  [("r" "Reveal card" (lambda ()
-                        (interactive)
-                        (cond
-                         ((eq srs--current-type 'cloze)
-                          (erase-buffer)
-                          (insert (srs--format-cloze srs--current-cloze 'reveal)))
-                         ((eq srs--current-type 'question)
-                          (insert "\n\n---\n\n")
-                          (insert srs--answer)))
-                        (if srs--is-cramming
-                            (srs--cram-reveal-menu)
-                          (srs--rate-menu))))
-   ("q" "Quit reviewing" srs-quit-review)]
-  [("n" "Scroll down" next-line :transient t)
-   ("p" "Scroll up" previous-line :transient t)])
+;; ┌─────┐
+;; │ New │
+;; └─────┘
+(defun srs--render-buffer ()
+  "Render the *srs* buffer based on current state."
+  (let ((inhibit-read-only t))
+    (erase-buffer)
+
+    ;; Insert keybindings based on mode
+    (cond
+     (srs-question-mode
+      (srs--insert-keybindings)
+      (when-let ((tags (srs--tags srs--current-id)))
+        (insert "Tags: " (string-join tags ", ") "\n\n"))
+      (pcase srs--current-type
+        ('cloze (insert (srs--format-cloze srs--current-cloze 'hide)))
+        ('question (insert srs--current-question))))
+
+     (srs-review-answer-mode
+      (srs--insert-keybindings)
+      (when-let ((tags (srs--tags srs--current-id)))
+        (insert "Tags: " (string-join tags ", ") "\n\n"))
+      (pcase srs--current-type
+        ('cloze (insert (srs--format-cloze srs--current-cloze 'reveal)))
+        ('question
+         (insert srs--current-question)
+         (insert "\n\n---\n\n")
+         (insert srs--answer))))
+
+     (srs-cram-answer-mode
+      (srs--insert-keybindings)
+      (when-let ((tags (srs--tags srs--current-id)))
+        (insert "Tags: " (string-join tags ", ") "\n\n"))
+      (pcase srs--current-type
+        ('cloze (insert (srs--format-cloze srs--current-cloze 'reveal)))
+        ('question
+         (insert srs--current-question)
+         (insert "\n\n---\n\n")
+         (insert srs--answer)))))))
+
+(defun srs--insert-keybindings ()
+  "Insert available keybindings based on current mode."
+  (let ((inhibit-read-only t))
+    (cond
+     (srs-question-mode
+      (insert-rectangle
+       (list
+        (concat (substitute-command-keys "\\[srs-reveal-answer]")
+                " ⇒ Reveal answer")
+        (concat (substitute-command-keys "\\[srs-quit-review]")
+                " ⇒ Quit review"))))
+
+     (srs-review-answer-mode
+      (insert-rectangle
+       (list
+        (concat (substitute-command-keys "\\[srs-rate-easy]")
+                " ⇒ Rate: Easy")
+        (concat (substitute-command-keys "\\[srs-rate-good]")
+                " ⇒ Rate: Good")
+        (concat (substitute-command-keys "\\[srs-rate-hard]")
+                " ⇒ Rate: Hard")
+        (concat (substitute-command-keys "\\[srs-rate-forgot]")
+                " ⇒ Rate: Forgot")
+        (concat (substitute-command-keys "\\[srs-quit-review]")
+                " ⇒ Quit review")
+        (concat (substitute-command-keys "\\[srs-visit-card-source]")
+                " ⇒ Visit card source"))))
+
+     (srs-cram-answer-mode
+      (insert-rectangle
+       (list
+        (concat (substitute-command-keys "\\[srs-next-card]")
+                " ⇒ Next card")
+        (concat (substitute-command-keys "\\[srs-quit-review]")
+                " ⇒ Quit review")
+        (concat (substitute-command-keys "\\[srs-visit-card-source]")
+                " ⇒ Visit card source")))))
+
+    ;; Align the ⇒ symbols
+    (align-regexp (point-min) (point-max) "\\(\\s-*\\)⇒")
+    (insert "\n")))
+
+(defun srs-reveal-answer ()
+  "Reveal the answer and switch to appropriate answer mode."
+  (interactive)
+  (srs-question-mode -1)
+  (if srs--is-cramming
+      (srs-cram-answer-mode 1)
+    (srs-review-answer-mode 1))
+  (srs--render-buffer))
+
+(defun srs-rate-card (grade)
+  "Rate the current card with GRADE and proceed to next."
+  (interactive)
+  (unless srs--is-cramming
+    (srs--update-review-history srs--current-id grade))
+  (srs-next-card))
+
+(defun srs-next-card ()
+  "Proceed to the next card in the queue."
+  (interactive)
+  (srs-review-answer-mode -1)
+  (srs-cram-answer-mode -1)
+
+  (if srs--review-queue
+      (srs--review-next-card)
+    (srs-quit-review)))
+
+(defun srs-rate-easy ()
+  "Command to rate card as easy."
+  (interactive)
+  (srs-rate-card :easy))
+
+(defun srs-rate-good ()
+  "Command to rate card as easy."
+  (interactive)
+  (srs-rate-card :good))
+
+(defun srs-rate-hard ()
+  "Command to rate card as easy."
+  (interactive)
+  (srs-rate-card :hard))
+
+(defun srs-rate-forgot ()
+  "Command to rate card as easy."
+  (interactive)
+  (srs-rate-card :forgot))
+
+;; ┌─────────┐
+;; │ Keymaps │
+;; └─────────┘
+(defvar srs-question-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "q") 'srs-quit-review)
+    (define-key map (kbd "r") 'srs-reveal-answer)
+    (define-key map (kbd "SPC") 'srs-reveal-answer)
+    map)
+  "Keymap for `srs-question-mode'.")
+
+(defvar srs-review-answer-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "e") 'srs-rate-easy)
+    (define-key map (kbd "g") 'srs-rate-good)
+    (define-key map (kbd "h") 'srs-rate-hard)
+    (define-key map (kbd "f") 'srs-rate-forgot)
+    (define-key map (kbd "q") 'srs-quit-review)
+    (define-key map (kbd "s") 'srs-visit-card-source)
+    map)
+  "Keymap for `srs-review-answer-mode'.")
+
+(defvar srs-cram-answer-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "n") 'srs-next-card)
+    (define-key map (kbd "SPC") 'srs-next-card)
+    (define-key map (kbd "q") 'srs-quit-review)
+    (define-key map (kbd "s") 'srs-visit-card-source)
+    map)
+  "Keymap for `srs-cram-answer-mode'.")
+
+;; ┌─────────────┐
+;; │ Minor Modes │
+;; └─────────────┘
+(define-minor-mode srs-question-mode
+  "Minor mode for displaying flashcard questions."
+  :init-value nil
+  :lighter " SRS-Q"
+  :keymap srs-question-mode-map)
+
+(define-minor-mode srs-review-answer-mode
+  "Minor mode for reviewing flashcards with rating."
+  :init-value nil
+  :lighter " SRS-R"
+  :keymap srs-review-answer-mode-map)
+
+(define-minor-mode srs-cram-answer-mode
+  "Minor mode for cramming flashcards (no rating)."
+  :init-value nil
+  :lighter " SRS-C"
+  :keymap srs-cram-answer-mode-map)
 
 ;; ┌──────────────────────────────────────────────────────────────────────────────────┐
 ;; │ FSRS algorithm implementation for flashcard.el                                   │
