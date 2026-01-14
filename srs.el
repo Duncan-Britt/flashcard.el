@@ -4,7 +4,7 @@
 ;; Contact: https://github.com/Duncan-Britt/srs/issues
 ;; URL: https://github.com/Duncan-Britt/srs
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "30.2"))
+;; Package-Requires: ((emacs "30.2") (transient "0.12.0"))
 ;; Keywords: hypermedia, srs, memory
 
 ;; This file is NOT part of GNU Emacs.
