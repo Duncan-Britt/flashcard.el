@@ -154,6 +154,7 @@
 ;; https://github.com/taksatou/flashcard.el
 ;; http://salvi.chaosnet.org/snippets/flashcard-old.html
 ;; https://github.com/open-spaced-repetition/lisp-fsrs
+;; https://github.com/eudoxia0/hashcards
 
 ;;; Code:
 (require 'transient)
@@ -342,6 +343,16 @@ before question, and inserts flashcard into persistant storage."
         ;; else
         (user-error "No flashcard %s <ID> on this line" srs-designator)))))
 
+(defun srs--card-metadata-location (card-id)
+  "From CARD-ID, return (HISTORY-FILE . POSITION)."
+  (with-temp-buffer              ;; <- Because calling (org-id-find card-id) will set the major
+    (pcase (org-id-find card-id) ;; mode of the current buffer to org-mode.
+      (`(,history-file . ,position) `(,history-file . ,position))
+      (_ (display-warning 'srs
+                          (format "Card with ID %s not found in %s\n" card-id srs-history-file)
+                          :warning)
+         'not-found))))
+
 (defun srs--all-known-tags ()
   "Return list of all unique tags used across all flashcards."
   (let ((tags (make-hash-table :test 'equal))
@@ -354,13 +365,14 @@ before question, and inserts flashcard into persistant storage."
           (skip-chars-forward " \t\n\r\f")
           (let ((id (srs--id-at-point)))
             (when id
-              (pcase-let ((`(,history-file . ,position) (org-id-find id)))
-                (with-current-buffer (find-file-noselect history-file)
-                  (let ((tags-str (org-entry-get position "srs-tags")))
-                    (when tags-str
-                      (dolist (tag (mapcar #'string-trim
-                                           (split-string tags-str "," t)))
-                        (puthash tag t tags)))))))))))
+              (pcase (srs--card-metadata-location id)
+                (`(,history-file . ,position)
+                 (with-current-buffer (find-file-noselect history-file)
+                   (let ((tags-str (org-entry-get position "srs-tags")))
+                     (when tags-str
+                       (dolist (tag (mapcar #'string-trim
+                                            (split-string tags-str "," t)))
+                         (puthash tag t tags))))))))))))
     (hash-table-keys tags)))
 
 (defun srs-card-delete-at-point ()
@@ -601,44 +613,45 @@ TYPE is either 'HIDE or 'REVEAL."
 GRADE is used to calculate the next review deadline according to the
 FSRS algorithm."
   (save-excursion
-    (pcase-let* ((`(,history-file . ,position) (org-id-find id))
-                 (buffer (find-file-noselect history-file)))
-      (with-current-buffer buffer
-        (org-mode)
-        (let ((difficulty-str (org-entry-get position "difficulty"))
-              (stability-str (org-entry-get position "stability"))
-              (last-review-timestamp (org-entry-get position "last-review-timestamp"))
-              (current-timestamp (format-time-string "%Y-%m-%dT%H:%M:%S%z")))
-          (if last-review-timestamp
-              (let* ((difficulty-num (string-to-number difficulty-str))
-                     (stability-num (string-to-number stability-str))
-                     (days-since-last-review (srs--days-since-timestamp last-review-timestamp))
-                     (retrievability (srs--retrievability days-since-last-review stability-num))
-                     (stability (srs--stability difficulty-num stability-num retrievability grade))
-                     (difficulty (srs--difficulty difficulty-num grade))
-                     (days-til-due (srs--days-til-next-review 0.9 stability)))
-                (goto-char position)
-                (org-set-property "stability" (number-to-string stability))
-                (org-set-property "difficulty" (number-to-string difficulty))
-                (org-set-property "last-review-timestamp" current-timestamp)
-                (org-set-property "next-review-deadline"
-                                  (format-time-string "%Y-%m-%dT%H:%M:%S%z"
-                                                      (srs--time-add-days (current-time) days-til-due))))
-            ;; else (initial review)
-            (let ((initial-stability (srs--stability-initial grade))
-                  (initial-difficulty (srs--difficulty-initial grade)))
-              (goto-char position)
-              (org-set-property "stability" (number-to-string initial-stability))
-              (org-set-property "difficulty" (number-to-string initial-difficulty))
-              (org-set-property "last-review-timestamp" current-timestamp)
-              (org-set-property "next-review-deadline"
-                                (format-time-string "%Y-%m-%dT%H:%M:%S%z"
-                                                    (srs--time-add-days (current-time)
-                                                                              (srs--days-til-next-review 0.9
-                                                                                                               initial-stability))))
-              (list initial-stability initial-difficulty )))
-          (save-buffer)))
-      (kill-buffer buffer))))
+    (pcase (srs--card-metadata-location id)
+      (`(,history-file . ,position)
+       (let ((buffer (find-file-noselect history-file)))
+         (with-current-buffer buffer
+           (org-mode)
+           (let ((difficulty-str (org-entry-get position "difficulty"))
+                 (stability-str (org-entry-get position "stability"))
+                 (last-review-timestamp (org-entry-get position "last-review-timestamp"))
+                 (current-timestamp (format-time-string "%Y-%m-%dT%H:%M:%S%z")))
+             (if last-review-timestamp
+                 (let* ((difficulty-num (string-to-number difficulty-str))
+                        (stability-num (string-to-number stability-str))
+                        (days-since-last-review (srs--days-since-timestamp last-review-timestamp))
+                        (retrievability (srs--retrievability days-since-last-review stability-num))
+                        (stability (srs--stability difficulty-num stability-num retrievability grade))
+                        (difficulty (srs--difficulty difficulty-num grade))
+                        (days-til-due (srs--days-til-next-review 0.9 stability)))
+                   (goto-char position)
+                   (org-set-property "stability" (number-to-string stability))
+                   (org-set-property "difficulty" (number-to-string difficulty))
+                   (org-set-property "last-review-timestamp" current-timestamp)
+                   (org-set-property "next-review-deadline"
+                                     (format-time-string "%Y-%m-%dT%H:%M:%S%z"
+                                                         (srs--time-add-days (current-time) days-til-due))))
+               ;; else (initial review)
+               (let ((initial-stability (srs--stability-initial grade))
+                     (initial-difficulty (srs--difficulty-initial grade)))
+                 (goto-char position)
+                 (org-set-property "stability" (number-to-string initial-stability))
+                 (org-set-property "difficulty" (number-to-string initial-difficulty))
+                 (org-set-property "last-review-timestamp" current-timestamp)
+                 (org-set-property "next-review-deadline"
+                                   (format-time-string "%Y-%m-%dT%H:%M:%S%z"
+                                                       (srs--time-add-days (current-time)
+                                                                           (srs--days-til-next-review 0.9
+                                                                                                      initial-stability))))
+                 (list initial-stability initial-difficulty )))
+             (save-buffer)))
+         (kill-buffer buffer))))))
 
 (defun srs--days-since-timestamp (timestamp)
   "Days (float) since TIMESTAMP."
@@ -679,25 +692,25 @@ Argument ANY-OR-ALL determines whether flashcards should match any or all provid
           (results nil))
       (dolist (location locations results)
         (pcase-let ((`(,file ,line ,id) location))
-          (pcase-let ((`(,history-file . ,position) (org-id-find id)))
-            ;; Only collect cards due for review
-            (when (or srs--is-cramming
-                      (with-temp-buffer
-                        (org-mode)
-                        (insert-file-contents history-file)
-                        (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
-                          (time-less-p (encode-time (parse-time-string next-review-deadline-str))
-                                       (current-time)))))
-              (with-temp-buffer
-                (insert-file-contents file)
-                (setq buffer-file-name file)
-                (set-auto-mode)
-                (set-buffer-modified-p nil)
-                (goto-line line)
-                (move-end-of-line 1)
-                (push (append (list id file line major-mode)
-                              (srs--parse-question-or-cloze-str-at-point))
-                      results)))))))))
+          (pcase (srs--card-metadata-location id)
+            (`(,history-file . ,position)
+             (when (or srs--is-cramming ;; Only collect cards due for review
+                       (with-temp-buffer
+                         (org-mode)
+                         (insert-file-contents history-file)
+                         (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
+                           (time-less-p (encode-time (parse-time-string next-review-deadline-str))
+                                        (current-time)))))
+               (with-temp-buffer
+                 (insert-file-contents file)
+                 (setq buffer-file-name file)
+                 (set-auto-mode)
+                 (set-buffer-modified-p nil)
+                 (goto-line line)
+                 (move-end-of-line 1)
+                 (push (append (list id file line major-mode)
+                               (srs--parse-question-or-cloze-str-at-point))
+                       results))))))))))
 
 (defun srs--due-grep ()
   "Helper for `srs--due-for-review' using grep."
@@ -706,25 +719,26 @@ Argument ANY-OR-ALL determines whether flashcards should match any or all provid
           (results nil))
       (dolist (location locations results)
         (pcase-let ((`(,file ,line ,id) location))
-          (pcase-let ((`(,history-file . ,position) (org-id-find id)))
-            ;; Only collect cards due for review
-            (when (or srs--is-cramming
-                      (with-temp-buffer
-                        (org-mode)
-                        (insert-file-contents history-file)
-                        (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
-                          (time-less-p (encode-time (parse-time-string next-review-deadline-str))
-                                       (current-time)))))
-              (with-temp-buffer
-                (insert-file-contents file)
-                (setq buffer-file-name file)
-                (set-auto-mode)
-                (set-buffer-modified-p nil)
-                (goto-line line)
-                (move-end-of-line 1)
-                (push (append (list id file line major-mode)
-                              (srs--parse-question-or-cloze-str-at-point))
-                      results)))))))))
+          (pcase (srs--card-metadata-location id)
+            (`(,history-file . ,position)
+             ;; Only collect cards due for review
+             (when (or srs--is-cramming
+                       (with-temp-buffer
+                         (org-mode)
+                         (insert-file-contents history-file)
+                         (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
+                           (time-less-p (encode-time (parse-time-string next-review-deadline-str))
+                                        (current-time)))))
+               (with-temp-buffer
+                 (insert-file-contents file)
+                 (setq buffer-file-name file)
+                 (set-auto-mode)
+                 (set-buffer-modified-p nil)
+                 (goto-line line)
+                 (move-end-of-line 1)
+                 (push (append (list id file line major-mode)
+                               (srs--parse-question-or-cloze-str-at-point))
+                       results))))))))))
 
 (defun srs--search-grep ()
   "Use grep to find flashcard locations."
@@ -804,17 +818,18 @@ Uses native Emacs search through files."
               (let ((id (srs--id-at-point))
                     (line (line-number-at-pos)))
                 (when id
-                  (pcase-let ((`(,history-file . ,position) (org-id-find id)))
-                    ;; Only collect cards due for review
-                    (when (or srs--is-cramming
-                              (with-current-buffer (find-file-noselect history-file)
-                                (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
-                                  (time-less-p (encode-time (parse-time-string next-review-deadline-str))
-                                               (current-time)))))
-                      (move-end-of-line 1)
-                      (push (append (list id file line saved-major-mode)
-                                    (srs--parse-question-or-cloze-str-at-point))
-                            results))))))))))))
+                  (pcase (srs--card-metadata-location id)
+                    (`(,history-file . ,position)
+                     ;; Only collect cards due for review
+                     (when (or srs--is-cramming
+                               (with-current-buffer (find-file-noselect history-file)
+                                 (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
+                                   (time-less-p (encode-time (parse-time-string next-review-deadline-str))
+                                                (current-time)))))
+                       (move-end-of-line 1)
+                       (push (append (list id file line saved-major-mode)
+                                     (srs--parse-question-or-cloze-str-at-point))
+                             results)))))))))))))
 
 (defun srs--store-new ()
   "Store new flashcard in persistent storage."
@@ -890,9 +905,6 @@ Look ahead to find question beginning at nearest nonwhitespace character."
                  (concat comment-start " "))))
     ""))
 
-;; ┌─────┐
-;; │ New │
-;; └─────┘
 (defun srs-review-back ()
   "Go back to previous review state."
   (interactive)
