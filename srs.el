@@ -158,6 +158,8 @@
 
 ;;; Code:
 (require 'transient)
+(require 'org-id)
+(require 'org)
 ;; ┌────────┐
 ;; │ Custom │
 ;; └────────┘
@@ -172,6 +174,7 @@ Examples:
 - *.log          -- includes all =.log= files
 - notes/         -- includes entire directory
 - notes/**/*.org -- includes org files within notes or any subdirectories"
+  :type '(repeat string)
   :group 'srs)
 
 (defcustom srs-designator "FC:"
@@ -179,20 +182,27 @@ Examples:
 
 For example, with the designator \"FC:\", a flashcard could be denoted
 as \"FC: <id>\n<Question>\n\n<Answer>\"."
+  :type 'string
   :group 'srs)
 
 (defcustom srs-history-file (expand-file-name (concat user-emacs-directory "srs-history.org"))
   "A file in which to store users saved flashcard review history.
 
 Essential for effective spaced repetition."
+  :type 'file
   :group 'srs)
 
 (defcustom srs-indicator-duration 1.0
   "Seconds to display success indicator."
+  :type 'number
   :group 'srs)
 ;; ┌────────────┐
 ;; │ End custom │
 ;; └────────────┘
+
+(defvar srs-question-mode nil)
+(defvar srs-review-answer-mode nil)
+(defvar srs-cram-answer-mode nil)
 (defvar srs--current-id nil)
 (defvar srs--current-type nil)
 (defvar srs--answer nil)
@@ -368,6 +378,7 @@ before question, and inserts flashcard into persistant storage."
               (pcase (srs--card-metadata-location id)
                 (`(,history-file . ,position)
                  (with-current-buffer (find-file-noselect history-file)
+                   (org-mode)
                    (let ((tags-str (org-entry-get position "srs-tags")))
                      (when tags-str
                        (dolist (tag (mapcar #'string-trim
@@ -415,16 +426,16 @@ before question, and inserts flashcard into persistant storage."
         ;; else
         (user-error "No flashcard %s <ID> on this line" srs-designator)))))
 
-(defun srs-review (&optional prefix-arg)
+(defun srs-review (&optional prfx-arg)
   "Review flashcards which are due.
 When FILTER-BY-TAGS-P is non nil, such as when invoked with a
-PREFIX-ARG, prompt the user for tags by which to filter the flashcards."
+PRFX-ARG, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
   (setq srs--review-states-history nil)
   (let ((filter-by-tags-p (if transient-current-prefix
                               (let ((args (transient-args transient-current-command)))
                                 (transient-arg-value "--filter" args))
-                            prefix-arg)))
+                            prfx-arg)))
     (setq srs--is-cramming nil)
     (setq srs--window-config-before-review (current-window-configuration))
     (let ((tags)
@@ -438,7 +449,7 @@ PREFIX-ARG, prompt the user for tags by which to filter the flashcards."
           (srs--review-next-card)
         (message "No flashcards due today")))))
 
-(transient-define-suffix srs-cram (&optional prefix-arg)
+(transient-define-suffix srs-cram (&optional prfx-arg)
   "Cram flashcards.
 Like `srs-review', but doesn't update flashcard review history.  When
 FILTER-BY-TAGS-P is non nil, such as when invoked with a prefix
@@ -448,7 +459,7 @@ arugment, prompt the user for tags by which to filter the flashcards."
   (let ((filter-by-tags-p (if transient-current-prefix
                               (let ((args (transient-args transient-current-command)))
                                 (transient-arg-value "--filter" args))
-                            prefix-arg)))
+                            prfx-arg)))
     (setq srs--is-cramming t)
     (setq srs--window-config-before-review (current-window-configuration))
     (let ((tags)
@@ -470,7 +481,7 @@ arugment, prompt the user for tags by which to filter the flashcards."
                           "Tags: " (srs--all-known-tags))))
     (list tags any-or-all-case)))
 
-(transient-define-suffix srs-browse (&optional prefix-arg)
+(transient-define-suffix srs-browse (&optional prfx-arg)
   "Browse all flashcards in an occur-like buffer.
 FILTER-BY-TAGS-P, (which can be set to non-NIL by using the prefix
 argument when called interactively), when non-NIL, will prompt the user
@@ -479,7 +490,7 @@ for tags by which to filter the results."
   (let ((filter-by-tags-p (if transient-current-prefix
                               (let ((args (transient-args transient-current-command)))
                                 (transient-arg-value "--filter" args))
-                            prefix-arg))
+                            prfx-arg))
         (tags)
         (any-or-all-case))
     (when filter-by-tags-p
@@ -499,7 +510,7 @@ for tags by which to filter the results."
                   (`(,_ ,file ,line ,__ question ,question ,___)
                    (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " question))))
                   (`(,_ ,file ,line ,__ cloze ,cloze-str)
-                   (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " (srs--format-cloze cloze-str)))))))
+                   (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " (srs--format-cloze cloze-str 'hide)))))))
               (compilation-mode)
               (setq-local compilation-directory default-directory)
               (goto-char (point-min))
@@ -524,7 +535,7 @@ Otherwise it must match all tags."
 (defun srs--format-cloze (cloze-str type)
   "Format CLOZE-STR.
 
-TYPE is either 'HIDE or 'REVEAL."
+TYPE is either `HIDE' or `REVEAL'."
   (pcase-exhaustive type
     ('hide
      (replace-regexp-in-string "{{[^}]*}}"
@@ -544,6 +555,7 @@ TYPE is either 'HIDE or 'REVEAL."
               (buffer (find-file-noselect history-file)))
           (unwind-protect
               (with-current-buffer buffer
+                (org-mode)
                 (let ((tags-str (org-entry-get position "srs-tags")))
                   (when tags-str
                     (mapcar #'string-trim
@@ -584,7 +596,8 @@ TYPE is either 'HIDE or 'REVEAL."
   "Visit source file of current flashcard."
   (interactive)
   (find-file-other-window srs--current-file)
-  (goto-line srs--current-line))
+  (goto-char (point-min))
+  (forward-line (1- srs--current-line)))
 
 (defun srs-quit-review ()
   "Quit the current review session."
@@ -670,8 +683,9 @@ Filtered by those due for review.
 Each location is a list of the form
 `(,ID ,FILE ,LINE-NUMBER ,MAJOR-MODE ,@CONTENT), where CONTENT takes the
 form `(question ,QUESTION ,ANSWER) or `(cloze ,FILL-IN-THE-BLANK).
-Argument TAGS is used to filter flashcards.
-Argument ANY-OR-ALL determines whether flashcards should match any or all provided tags, if tags are provided."
+Argument TAGS is used to filter flashcards.  Argument ANY-OR-ALL
+determines whether flashcards should match any or all provided tags, if
+tags are provided."
   (let ((cards (cond
                 ((and (fboundp 'rg) (executable-find "rg"))
                  (srs--due-ripgrep))
@@ -706,7 +720,8 @@ Argument ANY-OR-ALL determines whether flashcards should match any or all provid
                  (setq buffer-file-name file)
                  (set-auto-mode)
                  (set-buffer-modified-p nil)
-                 (goto-line line)
+                 (goto-char (point-min))
+                 (forward-line (1- line))
                  (move-end-of-line 1)
                  (push (append (list id file line major-mode)
                                (srs--parse-question-or-cloze-str-at-point))
@@ -734,7 +749,8 @@ Argument ANY-OR-ALL determines whether flashcards should match any or all provid
                  (setq buffer-file-name file)
                  (set-auto-mode)
                  (set-buffer-modified-p nil)
-                 (goto-line line)
+                 (goto-char (point-min))
+                 (forward-line (1- line))
                  (move-end-of-line 1)
                  (push (append (list id file line major-mode)
                                (srs--parse-question-or-cloze-str-at-point))
@@ -823,6 +839,7 @@ Uses native Emacs search through files."
                      ;; Only collect cards due for review
                      (when (or srs--is-cramming
                                (with-current-buffer (find-file-noselect history-file)
+                                 (org-mode)
                                  (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
                                    (time-less-p (encode-time (parse-time-string next-review-deadline-str))
                                                 (current-time)))))
@@ -839,6 +856,7 @@ Uses native Emacs search through files."
           (buf (find-file-noselect srs-history-file)))
       (unwind-protect
           (with-current-buffer buf
+            (org-mode)
             (goto-char (point-max))
             (let ((card-id (org-id-get-create))
                   (timestamp (format-time-string "%Y-%m-%dT%H:%M:%S%z")))
@@ -1166,7 +1184,7 @@ Look ahead to find question beginning at nearest nonwhitespace character."
 (defconst srs-C -0.5)
 (defconst srs-W [0.40255 1.18385 3.173 15.69105 7.1949 0.5345 1.4604 0.0046 1.54575 0.1192
                           1.01925 1.9395 0.11 0.29605 2.2698 0.2315 2.9898 0.51655 0.6621])
-(defmacro srs--w (i) "Convenience wrapper for accessing weights via I, the index into `srs-W' vector." `(aref ,srs-W ,i))
+(defmacro srs--w (i) "Convenience wrapper for accessing weights via I, the index into `srs-W' vector." `(aref srs-W ,i))
 
 ;; ┌──────────────────────┐
 ;; │ Days til next review │

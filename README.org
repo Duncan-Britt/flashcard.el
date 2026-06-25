@@ -5,11 +5,11 @@
 This package implements a *Spaced Repetition System* (SRS) for creating and reviewing flashcards. Flashcards can be embedded among your notes, or any text file, so long as you tell ~srs.el~ where to look for them—by setting ~srs-path-list~.
 
 * Installation
-Example Elpaca + use-package installation:
+Example use-package installation:
 
 #+BEGIN_SRC elisp
 (use-package srs
-  :ensure (:host github :repo "Duncan-Britt/srs.el")
+  :ensure t
   :config
   (add-to-list 'srs-path-list (expand-file-name "~/notes/*.org")))
 #+END_SRC
