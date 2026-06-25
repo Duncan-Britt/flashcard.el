@@ -98,4 +98,5 @@ Run this command with your cursor over the line with <DESIGNATOR>: <ID>
 - https://github.com/taksatou/flashcard.el
 - http://salvi.chaosnet.org/snippets/flashcard-old.html
 - https://github.com/open-spaced-repetition/lisp-fsrs
+- https://github.com/meedstrom/inline-anki
 
