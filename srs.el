@@ -35,12 +35,13 @@
 ;; ┌──────────────┐
 ;; │ Installation │
 ;; └──────────────┘
-;; Example Elpaca + use-package instalation
+;; Example use-package instalation
 ;;
 ;;  (use-package srs
-;;    :ensure (:host github :repo "Duncan-Britt/srs.el")
+;;    :ensure t
 ;;    :config
-;;    (add-to-list 'srs-path-list (expand-file-name "~/notes/*.org")))
+;;    (add-to-list 'srs-path-list (expand-file-name "~/notes/*.org"))
+;;    (srs-set-prefix-kbd "s-"))
 
 ;; ┌─────────────────────────┐
 ;; │ Usage -- Transient Menu │
@@ -355,13 +356,18 @@ before question, and inserts flashcard into persistant storage."
 
 (defun srs--card-metadata-location (card-id)
   "From CARD-ID, return (HISTORY-FILE . POSITION)."
-  (with-temp-buffer              ;; <- Because calling (org-id-find card-id) will set the major
-    (pcase (org-id-find card-id) ;; mode of the current buffer to org-mode.
-      (`(,history-file . ,position) `(,history-file . ,position))
-      (_ (display-warning 'srs
-                          (format "Card with ID %s not found in %s\n" card-id srs-history-file)
-                          :warning)
-         'not-found))))
+  (with-temp-buffer ;; <- (org-id-find card-id) sets the major mode to org
+    (let* ((base-extra-files (if (symbolp org-id-extra-files)
+                                 (symbol-value org-id-extra-files)
+                               org-id-extra-files))
+           (org-id-extra-files (cons (expand-file-name srs-history-file)
+                                     base-extra-files)))
+      (pcase (org-id-find card-id)
+        (`(,history-file . ,position) `(,history-file . ,position))
+        (_ (display-warning 'srs
+                            (format "Card with ID %s not found in %s\n" card-id srs-history-file)
+                            :warning)
+           'not-found)))))
 
 (defun srs--all-known-tags ()
   "Return list of all unique tags used across all flashcards."
@@ -1160,6 +1166,49 @@ Look ahead to find question beginning at nearest nonwhitespace character."
   :init-value nil
   :lighter " SRS-C"
   :keymap srs-cram-answer-mode-map)
+
+;; ┌─────────────────────────────────────────┐
+;; │ Changing prefix key for minor mode maps │
+;; └─────────────────────────────────────────┘
+(defun srs-set-prefix-kbd (key-str)
+  "Set the prefix key used for minor modes during review.
+
+The mode maps are `srs-question-mode-map', `srs-review-answer-mode-map',
+and `srs-cram-answer-mode-map'.  KEY-STR is a string representing the
+beginning of a key binding, for example \"C-x \" or \"M-\"."
+  (setq srs-question-mode-map
+        (let ((map (make-sparse-keymap)))
+          (define-key map (kbd (concat key-str "q")) 'srs-quit-review)
+          (define-key map (kbd (concat key-str "r")) 'srs-reveal-answer)
+          (define-key map (kbd (concat key-str "b")) 'srs-review-back)
+          (define-key map (kbd (concat key-str "s")) 'srs-next-card)
+          map))
+  (setq srs-review-answer-mode-map
+        (let ((map (make-sparse-keymap)))
+          (define-key map (kbd (concat key-str "e")) 'srs-rate-easy)
+          (define-key map (kbd (concat key-str "g")) 'srs-rate-good)
+          (define-key map (kbd (concat key-str "h")) 'srs-rate-hard)
+          (define-key map (kbd (concat key-str "f")) 'srs-rate-forgot)
+          (define-key map (kbd (concat key-str "q")) 'srs-quit-review)
+          (define-key map (kbd (concat key-str "v")) 'srs-visit-card-source)
+          (define-key map (kbd (concat key-str "b")) 'srs-review-back)
+          (define-key map (kbd (concat key-str "s")) 'srs-next-card)
+          map))
+  (setq srs-cram-answer-mode-map
+        (let ((map (make-sparse-keymap)))
+          (define-key map (kbd (concat key-str "n")) 'srs-next-card)
+          (define-key map (kbd (concat key-str "q")) 'srs-quit-review)
+          (define-key map (kbd (concat key-str "v")) 'srs-visit-card-source)
+          (define-key map (kbd (concat key-str "b")) 'srs-review-back)
+          map))
+  ;; Update minor-mode-map-alist to reflect the new keymaps.
+  (dolist (pair `((srs-question-mode    . ,srs-question-mode-map)
+                  (srs-review-answer-mode . ,srs-review-answer-mode-map)
+                  (srs-cram-answer-mode . ,srs-cram-answer-mode-map)))
+    (let ((entry (assq (car pair) minor-mode-map-alist)))
+      (if entry
+          (setcdr entry (cdr pair))
+        (push pair minor-mode-map-alist)))))
 
 ;; ┌──────────────────────────────────────────────────────────────────────────────────┐
 ;; │ FSRS algorithm implementation for flashcard.el                                   │

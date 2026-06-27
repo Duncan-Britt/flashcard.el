@@ -3,6 +3,7 @@
 (require 'srs)
 (setq srs-path-list (list (expand-file-name "./mock.el")))
 (setq srs-history-file (expand-file-name "./hist"))
+(srs-set-prefix-kbd "s-")
 
 ;; FC: 0BBE7BF9-5F8F-4655-AD6E-E0D74350CA48
 ;; This is a question card

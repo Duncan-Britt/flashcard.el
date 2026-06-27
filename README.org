@@ -8,10 +8,11 @@ This package implements a *Spaced Repetition System* (SRS) for creating and revi
 Example use-package installation:
 
 #+BEGIN_SRC elisp
-(use-package srs
-  :ensure t
-  :config
-  (add-to-list 'srs-path-list (expand-file-name "~/notes/*.org")))
+  (use-package srs
+    :ensure t
+    :config
+    (add-to-list 'srs-path-list (expand-file-name "~/notes/*.org"))
+    (srs-set-prefix-kbd "s-"))
 #+END_SRC
 
 * Usage — Transient Menu
