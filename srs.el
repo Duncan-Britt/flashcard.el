@@ -1,6 +1,6 @@
 ;;; srs.el --- Spaced repetition in plain text -*- lexical-binding: t -*-
 
-;; Author: Duncan Britt duncanbritt.com
+;; Author: Duncan Britt <duncanbritt.com>
 ;; Contact: https://github.com/Duncan-Britt/srs.el/issues
 ;; URL: https://github.com/Duncan-Britt/srs.el
 ;; Version: 0.1.0
