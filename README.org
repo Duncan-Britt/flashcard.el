@@ -2,6 +2,8 @@
 #+AUTHOR: Duncan Britt
 #+URL: https://github.com/Duncan-Britt/srs
 
+[[https://melpa.org/#/srs][https://melpa.org/packages/srs-badge.svg]]
+
 This package implements a *Spaced Repetition System* (SRS) for creating and reviewing flashcards. Flashcards can be embedded among your notes, or any text file, so long as you tell ~srs.el~ where to look for them—by setting ~srs-path-list~.
 
 [[https://github.com/Duncan-Britt/srs.el/blob/media/media/20260627T143545--srs-package-demo.gif]]
