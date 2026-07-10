@@ -980,13 +980,13 @@ Look ahead to find question beginning at nearest nonwhitespace character."
       ('review-answer (srs-review-answer-mode 1))
       ('cram-answer (srs-cram-answer-mode 1)))))
 
-(defun srs--render-buffer ()
+(defun srs--render-buffer (&optional render-tags-p)
   "Render the *srs* buffer based on current state."
   (let ((inhibit-read-only t))
     (erase-buffer)
     (srs--insert-keybindings)
     (insert "\n")
-    (when-let ((tags (srs--tags srs--current-id)))
+    (when-let ((tags (and render-tags-p (srs--tags srs--current-id))))
       (insert "Tags: " (string-join tags ", ") "\n\n"))
     (let ((comment-start (or comment-start "|")))
       (comment-region (point-min) (point-max)))
@@ -1073,7 +1073,7 @@ Look ahead to find question beginning at nearest nonwhitespace character."
   (if srs--is-cramming
       (srs-cram-answer-mode 1)
     (srs-review-answer-mode 1))
-  (srs--render-buffer))
+  (srs--render-buffer t))
 
 (defun srs-rate-card (grade)
   "Rate the current card with GRADE and proceed to next."
