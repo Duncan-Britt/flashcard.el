@@ -227,7 +227,11 @@ Displays fetch timestamp in echo area if available.
 Reuses existing indicator overlay if present, extending its timer.
 This prevents overlay accumulation during rapid refreshes.
 
-Called by `srs-card-make-at-point' and `srs-card-delete-at-point'."
+Called by `srs-card-make-at-point' and `srs-card-delete-at-point'.
+
+Attribution: definition lifted from
+`org-transclusion-blocks--show-indicator':
+https://github.com/gggion/org-transclusion-blocks/blob/2d02aa84c45a731959327da79d5cf18dac4e5f7b/org-transclusion-blocks.el#L1518"
   (when (> srs-indicator-duration 0)
     (let* ((beg position)
            (end (save-excursion
