@@ -19,10 +19,10 @@ Example use-package installation:
     (srs-set-prefix-kbd "s-"))
 #+END_SRC
 
-* Usage — Transient Menu
+* Menu
 ~M-x srs-menu~ provides a transient menu for accessing srs commands.
 
-* Usage — Making Flashcards
+* Making Flashcards
 You can embed flashcards in any text file. A typical flashcard looks like this:
 
 #+BEGIN_EXAMPLE
@@ -77,15 +77,15 @@ Some examples:
 (add-to-list 'srs-path-list (expand-file-name "~/even/source/code.el"))
 #+END_SRC
 
-* Usage — Reviewing Flashcards
+* Reviewing Flashcards
 ~M-x srs-review~
 
 This is how you can review flashcards which are "due".
 
-* Usage — Editing Flashcards
+* Editing Flashcards
 Just revise the text of your card where you wrote it. You don't need to run any additional commands. As long as the id is still present above your card, all is well.
 
-* Usage — Deleting Flashcards
+* Deleting Flashcards
 ~M-x srs-card-delete-at-point~
 
 Run this command with your cursor over the line with <DESIGNATOR>: <ID>
