@@ -1,6 +1,6 @@
 #+TITLE: srs.el
 #+AUTHOR: Duncan Britt
-#+URL: https://github.com/Duncan-Britt/srs
+#+URL: https://github.com/Duncan-Britt/srs.el
 
 [[https://melpa.org/#/srs][https://melpa.org/packages/srs-badge.svg]]
 
