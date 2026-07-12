@@ -252,7 +252,7 @@ https://github.com/gggion/org-transclusion-blocks/blob/2d02aa84c45a731959327da79
 
       ;; Set overlay properties (idempotent if reusing)
       (overlay-put ov 'before-string
-                   (propertize "☑ " 'face '(:foreground "green" :weight bold)))
+                   (propertize "☑ " 'face 'success))
       (overlay-put ov 'srs-indicator t)
 
       ;; Create new timer and store it on overlay
