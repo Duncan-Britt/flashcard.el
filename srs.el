@@ -896,6 +896,7 @@ Look ahead to find question beginning at nearest nonwhitespace character."
             ;; For question/answer cards, find answer
             (goto-char end-question)
             (skip-chars-forward " \t\n\r\f")
+            (goto-char (line-beginning-position))
             (let ((begin-answer (point)))
               ;; Find end of answer (empty line or EOF)
               (re-search-forward "\n[ \t]*\n\\|\\'")
