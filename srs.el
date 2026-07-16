@@ -3,7 +3,7 @@
 ;; Author: Duncan Britt <duncanbritt.com>
 ;; Contact: https://github.com/Duncan-Britt/srs.el/issues
 ;; URL: https://github.com/Duncan-Britt/srs.el
-;; Version: 0.1.0
+;; Version: 1.0.1
 ;; Package-Requires: ((emacs "30.2") (transient "0.12.0"))
 ;; Keywords: hypermedia, srs, memory
 
