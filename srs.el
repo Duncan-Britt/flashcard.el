@@ -3,7 +3,7 @@
 ;; Author: Duncan Britt <duncanbritt.com>
 ;; Contact: https://github.com/Duncan-Britt/srs.el/issues
 ;; URL: https://github.com/Duncan-Britt/srs.el
-;; Version: 1.0.1
+;; Version: 1.0.2
 ;; Package-Requires: ((emacs "30.2") (transient "0.12.0"))
 ;; Keywords: hypermedia, srs, memory
 
@@ -861,13 +861,13 @@ Uses native Emacs search through files."
 (defun srs--store-new ()
   "Store new flashcard in persistent storage."
   (save-excursion
-    (write-region "\n* Card" nil srs-history-file t)
     (let ((file-was-open-p (get-file-buffer srs-history-file))
           (buf (find-file-noselect srs-history-file)))
       (unwind-protect
           (with-current-buffer buf
             (org-mode)
             (goto-char (point-max))
+            (insert "\n* Card")
             (let ((card-id (org-id-get-create))
                   (timestamp (format-time-string "%Y-%m-%dT%H:%M:%S%z")))
               (org-set-property "created" timestamp)
