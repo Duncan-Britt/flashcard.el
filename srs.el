@@ -492,6 +492,47 @@ arugment, prompt the user for tags by which to filter the flashcards."
                           "Tags: " (srs--all-known-tags))))
     (list tags any-or-all-case)))
 
+(defvar-local srs--browse-tags nil)
+(defvar-local srs--browse-any-or-all nil)
+
+(defvar srs-browse-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "g") #'srs-browse-refresh)
+    map)
+  "Keymap for `srs-browse-mode'.  Inherits from `compilation-mode-map'.")
+
+(define-derived-mode srs-browse-mode compilation-mode "Srs-Browse"
+  "Major mode for browsing srs.el flashcards.")
+
+(defun srs-browse-refresh ()
+  "Re-search for flashcards and repopulate the browse buffer."
+  (interactive)
+  (srs--browse-populate srs--browse-tags srs--browse-any-or-all)
+  (message "Refreshed flashcard list"))
+
+(defun srs--browse-populate (tags any-or-all-case)
+  "Populate the *Srs Browse* buffer with cards matching TAGS and ANY-OR-ALL-CASE."
+  (let* ((srs--is-cramming t)
+         (cards (srs--due-for-review tags any-or-all-case)))
+    (if cards
+        (with-current-buffer (get-buffer-create "*Srs Browse*")
+          (let ((inhibit-read-only t))
+            (erase-buffer)
+            (insert (format "%d cards in %s\n" (length cards) srs-path-list))
+            (dolist (card cards)
+              (pcase-exhaustive card
+                (`(,_ ,file ,line ,__ question ,question ,___)
+                 (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " question))))
+                (`(,_ ,file ,line ,__ cloze ,cloze-str)
+                 (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " (srs--format-cloze cloze-str 'hide))))))))
+          (srs-browse-mode)
+          ;; Set after the mode call, since changing major mode kills local variables.
+          (setq srs--browse-tags tags
+                srs--browse-any-or-all any-or-all-case)
+          (goto-char (point-min))
+          (pop-to-buffer (current-buffer)))
+      (message "No flashcards found"))))
+
 (transient-define-suffix srs-browse (&optional prfx-arg)
   "Browse all flashcards in an occur-like buffer.
 FILTER-BY-TAGS-P, (which can be set to non-NIL by using the prefix
@@ -508,25 +549,7 @@ for tags by which to filter the results."
       (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
         (setq tags x)
         (setq any-or-all-case y)))
-    (let* ((srs--is-cramming t) ;; <- don't filter cards not due in call to `srs--due-for-review'
-           (cards (srs--due-for-review tags any-or-all-case)))
-      (if cards
-          (progn
-            (when-let ((buf (get-buffer "*Srs Browse*")))
-              (kill-buffer buf))
-            (with-current-buffer (get-buffer-create "*Srs Browse*")
-              (insert (format "%d cards in %s\n" (length cards) srs-path-list))
-              (dolist (card cards)
-                (pcase-exhaustive card
-                  (`(,_ ,file ,line ,__ question ,question ,___)
-                   (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " question))))
-                  (`(,_ ,file ,line ,__ cloze ,cloze-str)
-                   (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " (srs--format-cloze cloze-str 'hide)))))))
-              (compilation-mode)
-              (setq-local compilation-directory default-directory)
-              (goto-char (point-min))
-              (pop-to-buffer (current-buffer))))
-        (message "No flashcards found")))))
+    (srs--browse-populate tags any-or-all-case)))
 
 (defun srs--matches-tag-p (card-id tags any-or-all)
   "Return non-NIL if card with CARD-ID matches TAGS.
