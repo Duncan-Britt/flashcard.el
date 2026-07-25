@@ -4,7 +4,7 @@
 ;; Contact: https://github.com/Duncan-Britt/srs.el/issues
 ;; URL: https://github.com/Duncan-Britt/srs.el
 ;; Version: 1.0.3
-;; Package-Requires: ((emacs "30.2") (transient "0.12.0"))
+;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: hypermedia, srs, memory
 
 ;; This file is NOT part of GNU Emacs.
@@ -42,12 +42,6 @@
 ;;    :config
 ;;    (add-to-list 'srs-path-list (expand-file-name "~/notes/*.org"))
 ;;    (srs-set-prefix-kbd "s-"))
-
-;; ┌──────┐
-;; │ Menu │
-;; └──────┘
-;; M-x srs-menu provides a transient menu for accessing
-;; srs commands described below.
 
 ;; ┌───────────────────┐
 ;; │ Making Flashcards │
@@ -158,9 +152,27 @@
 ;; https://github.com/eudoxia0/hashcards
 
 ;;; Code:
-(require 'transient)
 (require 'org-id)
 (require 'org)
+(require 'seq)
+(require 'subr-x)
+(require 'compile)
+
+;; ┌────────┐
+;; │ Compat │
+;; └────────┘
+(defun srs--string-replace (from-string to-string in-string)
+  "Compatibility wrapper for `string-replace'.
+Replace all occurrences of FROM-STRING with TO-STRING in IN-STRING.
+Matching is literal and case-sensitive."
+  (if (fboundp 'string-replace)
+      (string-replace from-string to-string in-string)
+    ;; else polyfill
+    (replace-regexp-in-string
+     (regexp-quote from-string)
+     to-string
+     in-string
+     t t)))
 
 ;; ┌────────┐
 ;; │ Custom │
@@ -437,52 +449,44 @@ before question, and inserts flashcard into persistant storage."
         ;; else
         (user-error "No flashcard %s <ID> on this line" srs-designator)))))
 
-(defun srs-review (&optional prfx-arg)
+(defun srs-review (&optional filter-by-tags-p)
   "Review flashcards which are due.
 When FILTER-BY-TAGS-P is non nil, such as when invoked with a
 PRFX-ARG, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
   (setq srs--review-states-history nil)
-  (let ((filter-by-tags-p (if transient-current-prefix
-                              (let ((args (transient-args transient-current-command)))
-                                (transient-arg-value "--filter" args))
-                            prfx-arg)))
-    (setq srs--is-cramming nil)
-    (setq srs--window-config-before-review (current-window-configuration))
-    (let ((tags)
-          (any-or-all-case))
-      (when filter-by-tags-p
-        (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
-          (setq tags x)
-          (setq any-or-all-case y)))
-      (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
-      (if srs--review-queue
-          (srs--review-next-card)
-        (message "No flashcards due today")))))
+  (setq srs--is-cramming nil)
+  (setq srs--window-config-before-review (current-window-configuration))
+  (let ((tags)
+        (any-or-all-case))
+    (when filter-by-tags-p
+      (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
+        (setq tags x)
+        (setq any-or-all-case y)))
+    (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
+    (if srs--review-queue
+        (srs--review-next-card)
+      (message "No flashcards due today"))))
 
-(transient-define-suffix srs-cram (&optional prfx-arg)
+(defun srs-cram (&optional filter-by-tags-p)
   "Cram flashcards.
 Like `srs-review', but doesn't update flashcard review history.  When
 FILTER-BY-TAGS-P is non nil, such as when invoked with a prefix
 arugment, prompt the user for tags by which to filter the flashcards."
   (interactive "P")
   (setq srs--review-states-history nil)
-  (let ((filter-by-tags-p (if transient-current-prefix
-                              (let ((args (transient-args transient-current-command)))
-                                (transient-arg-value "--filter" args))
-                            prfx-arg)))
-    (setq srs--is-cramming t)
-    (setq srs--window-config-before-review (current-window-configuration))
-    (let ((tags)
-          (any-or-all-case))
-      (when filter-by-tags-p
-        (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
-          (setq tags x)
-          (setq any-or-all-case y)))
-      (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
-      (if srs--review-queue
-          (srs--review-next-card)
-        (message "Found 0 flashcards")))))
+  (setq srs--is-cramming t)
+  (setq srs--window-config-before-review (current-window-configuration))
+  (let ((tags)
+        (any-or-all-case))
+    (when filter-by-tags-p
+      (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
+        (setq tags x)
+        (setq any-or-all-case y)))
+    (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
+    (if srs--review-queue
+        (srs--review-next-card)
+      (message "Found 0 flashcards"))))
 
 (defun srs--prompt-read-tags ()
   "Prompt the user for tags and return selection."
@@ -492,17 +496,13 @@ arugment, prompt the user for tags by which to filter the flashcards."
                           "Tags: " (srs--all-known-tags))))
     (list tags any-or-all-case)))
 
-(transient-define-suffix srs-browse (&optional prfx-arg)
+(defun srs-browse (&optional filter-by-tags-p)
   "Browse all flashcards in an occur-like buffer.
 FILTER-BY-TAGS-P, (which can be set to non-NIL by using the prefix
 argument when called interactively), when non-NIL, will prompt the user
 for tags by which to filter the results."
   (interactive "P")
-  (let ((filter-by-tags-p (if transient-current-prefix
-                              (let ((args (transient-args transient-current-command)))
-                                (transient-arg-value "--filter" args))
-                            prfx-arg))
-        (tags)
+  (let ((tags)
         (any-or-all-case))
     (when filter-by-tags-p
       (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
@@ -519,9 +519,9 @@ for tags by which to filter the results."
               (dolist (card cards)
                 (pcase-exhaustive card
                   (`(,_ ,file ,line ,__ question ,question ,___)
-                   (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " question))))
+                   (insert (format "%s:%d: %s\n" file line (srs--string-replace "\n" "⮐ " question))))
                   (`(,_ ,file ,line ,__ cloze ,cloze-str)
-                   (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " (srs--format-cloze cloze-str 'hide)))))))
+                   (insert (format "%s:%d: %s\n" file line (srs--string-replace "\n" "⮐ " (srs--format-cloze cloze-str 'hide)))))))
               (compilation-mode)
               (setq-local compilation-directory default-directory)
               (goto-char (point-min))
@@ -616,20 +616,6 @@ TYPE is either `HIDE' or `REVEAL'."
   (setq srs--is-cramming nil)
   (kill-buffer "*srs*")
   (set-window-configuration srs--window-config-before-review))
-
-(transient-define-prefix srs-menu ()
-  "Transient menu for srs.el."
-  :refresh-suffixes t
-  [["Review"
-    ("r" "Review due cards" srs-review)
-    ("c" "Cram cards" srs-cram)]
-   ["Edit"
-    ("m" "Make flashcard at point" srs-card-make-at-point)
-    ("d" "Delete flashcard at point" srs-card-delete-at-point)
-    ("t" "Edit tags for flashcard at point" srs-card-edit-tags)
-    ("b" "Browse flashcards" srs-browse)]]
-  ["Options"
-   ("-f" "Filter by tag(s)" "--filter")])
 
 (defun srs--update-review-history (id grade)
   "Update review history of card with ID.
