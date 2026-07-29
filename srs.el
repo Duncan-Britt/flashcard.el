@@ -165,6 +165,7 @@
 (require 'seq)
 (require 'subr-x)
 (require 'compile)
+(require 'parse-time)
 
 ;; Declarations to silence the byte-compiler on Emacs < 30,
 ;; where transient is not required.
@@ -729,9 +730,10 @@ FSRS algorithm."
 
 (defun srs--days-since-timestamp (timestamp)
   "Days (float) since TIMESTAMP."
-  (let ((time (encode-time (parse-time-string timestamp))))
+  (let ((time (parse-iso8601-time-string timestamp)))
     (/ (float-time (time-subtract (current-time) time))
        86400.0)))
+
 
 (defun srs--time-add-days (time days)
   "Add DAYS (a decimal number) to TIME."
@@ -774,7 +776,7 @@ tags are provided."
                          (org-mode)
                          (insert-file-contents history-file)
                          (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
-                           (time-less-p (encode-time (parse-time-string next-review-deadline-str))
+                           (time-less-p (parse-iso8601-time-string next-review-deadline-str)
                                         (current-time)))))
                (with-temp-buffer
                  (insert-file-contents file)
@@ -855,7 +857,7 @@ Uses native Emacs search through files."
                                (with-current-buffer (find-file-noselect history-file)
                                  (org-mode)
                                  (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
-                                   (time-less-p (encode-time (parse-time-string next-review-deadline-str))
+                                   (time-less-p (parse-iso8601-time-string next-review-deadline-str)
                                                 (current-time)))))
                        (end-of-line 1)
                        (push (append (list id file line saved-major-mode)
