@@ -3,7 +3,7 @@
 ;; Author: Duncan Britt <duncanbritt.com>
 ;; Contact: https://github.com/Duncan-Britt/srs.el/issues
 ;; URL: https://github.com/Duncan-Britt/srs.el
-;; Version: 1.0.2
+;; Version: 1.0.3
 ;; Package-Requires: ((emacs "30.2") (transient "0.12.0"))
 ;; Keywords: hypermedia, srs, memory
 
@@ -161,6 +161,7 @@
 (require 'transient)
 (require 'org-id)
 (require 'org)
+
 ;; ┌────────┐
 ;; │ Custom │
 ;; └────────┘
@@ -491,6 +492,47 @@ arugment, prompt the user for tags by which to filter the flashcards."
                           "Tags: " (srs--all-known-tags))))
     (list tags any-or-all-case)))
 
+(defvar-local srs--browse-tags nil)
+(defvar-local srs--browse-any-or-all nil)
+
+(defvar srs-browse-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "g") #'srs-browse-refresh)
+    map)
+  "Keymap for `srs-browse-mode'.  Inherits from `compilation-mode-map'.")
+
+(define-derived-mode srs-browse-mode compilation-mode "Srs-Browse"
+  "Major mode for browsing srs.el flashcards.")
+
+(defun srs-browse-refresh ()
+  "Re-search for flashcards and repopulate the browse buffer."
+  (interactive)
+  (srs--browse-populate srs--browse-tags srs--browse-any-or-all)
+  (message "Refreshed flashcard list"))
+
+(defun srs--browse-populate (tags any-or-all-case)
+  "Populate the *Srs Browse* buffer with cards matching TAGS and ANY-OR-ALL-CASE."
+  (let* ((srs--is-cramming t)
+         (cards (srs--due-for-review tags any-or-all-case)))
+    (if cards
+        (with-current-buffer (get-buffer-create "*Srs Browse*")
+          (let ((inhibit-read-only t))
+            (erase-buffer)
+            (insert (format "%d cards in %s\n" (length cards) srs-path-list))
+            (dolist (card cards)
+              (pcase-exhaustive card
+                (`(,_ ,file ,line ,__ question ,question ,___)
+                 (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " question))))
+                (`(,_ ,file ,line ,__ cloze ,cloze-str)
+                 (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " (srs--format-cloze cloze-str 'hide))))))))
+          (srs-browse-mode)
+          ;; Set after the mode call, since changing major mode kills local variables.
+          (setq srs--browse-tags tags
+                srs--browse-any-or-all any-or-all-case)
+          (goto-char (point-min))
+          (pop-to-buffer (current-buffer)))
+      (message "No flashcards found"))))
+
 (transient-define-suffix srs-browse (&optional prfx-arg)
   "Browse all flashcards in an occur-like buffer.
 FILTER-BY-TAGS-P, (which can be set to non-NIL by using the prefix
@@ -507,25 +549,7 @@ for tags by which to filter the results."
       (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
         (setq tags x)
         (setq any-or-all-case y)))
-    (let* ((srs--is-cramming t) ;; <- don't filter cards not due in call to `srs--due-for-review'
-           (cards (srs--due-for-review tags any-or-all-case)))
-      (if cards
-          (progn
-            (when-let ((buf (get-buffer "*Srs Browse*")))
-              (kill-buffer buf))
-            (with-current-buffer (get-buffer-create "*Srs Browse*")
-              (insert (format "%d cards in %s\n" (length cards) srs-path-list))
-              (dolist (card cards)
-                (pcase-exhaustive card
-                  (`(,_ ,file ,line ,__ question ,question ,___)
-                   (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " question))))
-                  (`(,_ ,file ,line ,__ cloze ,cloze-str)
-                   (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " (srs--format-cloze cloze-str 'hide)))))))
-              (compilation-mode)
-              (setq-local compilation-directory default-directory)
-              (goto-char (point-min))
-              (pop-to-buffer (current-buffer))))
-        (message "No flashcards found")))))
+    (srs--browse-populate tags any-or-all-case)))
 
 (defun srs--matches-tag-p (card-id tags any-or-all)
   "Return non-NIL if card with CARD-ID matches TAGS.
@@ -697,10 +721,10 @@ Argument TAGS is used to filter flashcards.  Argument ANY-OR-ALL
 determines whether flashcards should match any or all provided tags, if
 tags are provided."
   (let ((cards (cond
-                ((and (fboundp 'rg) (executable-find "rg"))
-                 (srs--due-ripgrep))
+                ((executable-find "rg")
+                 (srs--due-via "rg"))
                 ((executable-find "grep")
-                 (srs--due-grep))
+                 (srs--due-via "grep"))
                 (t
                  (srs--due-native)))))
     (if tags
@@ -709,10 +733,10 @@ tags are provided."
                     cards)
       cards)))
 
-(defun srs--due-ripgrep ()
-  "Helper for `srs--due-for-review' using ripgrep."
+(defun srs--due-via (grepper)
+  "Helper for `srs--due-for-review' using GREPPER."
   (save-excursion
-    (let ((locations (srs--search-ripgrep))
+    (let ((locations (srs--search-via grepper))
           (results nil))
       (dolist (location locations results)
         (pcase-let ((`(,file ,line ,id) location))
@@ -727,80 +751,33 @@ tags are provided."
                                         (current-time)))))
                (with-temp-buffer
                  (insert-file-contents file)
-                 (setq buffer-file-name file)
-                 (set-auto-mode)
-                 (set-buffer-modified-p nil)
                  (goto-char (point-min))
                  (forward-line (1- line))
-                 (move-end-of-line 1)
+                 (end-of-line 1)
+                 (save-excursion
+                   (setq buffer-file-name file)
+                   (let ((org-inhibit-startup t))
+                     (delay-mode-hooks (set-auto-mode)))
+                   (set-buffer-modified-p nil))
                  (push (append (list id file line major-mode)
                                (srs--parse-question-or-cloze-str-at-point))
                        results))))))))))
 
-(defun srs--due-grep ()
-  "Helper for `srs--due-for-review' using grep."
-  (save-excursion
-    (let ((locations (srs--search-grep))
-          (results nil))
-      (dolist (location locations results)
-        (pcase-let ((`(,file ,line ,id) location))
-          (pcase (srs--card-metadata-location id)
-            (`(,history-file . ,position)
-             ;; Only collect cards due for review
-             (when (or srs--is-cramming
-                       (with-temp-buffer
-                         (org-mode)
-                         (insert-file-contents history-file)
-                         (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
-                           (time-less-p (encode-time (parse-time-string next-review-deadline-str))
-                                        (current-time)))))
-               (with-temp-buffer
-                 (insert-file-contents file)
-                 (setq buffer-file-name file)
-                 (set-auto-mode)
-                 (set-buffer-modified-p nil)
-                 (goto-char (point-min))
-                 (forward-line (1- line))
-                 (move-end-of-line 1)
-                 (push (append (list id file line major-mode)
-                               (srs--parse-question-or-cloze-str-at-point))
-                       results))))))))))
-
-(defun srs--search-grep ()
-  "Use grep to find flashcard locations."
+(defun srs--search-via (grepper)
+  "Use GREPPER to find flashcard locations."
   (let ((files (srs--card-file-paths))
         (results))
     (when files
       (with-temp-buffer
-        (apply #'call-process "grep" nil t nil
-               "--with-filename" "-n" "-e" srs-designator
+        (apply #'call-process grepper nil t nil
+               "--with-filename" "-n" "-F" "-e" srs-designator
                files)
         (goto-char (point-min))
-        (thing-at-point 'number)
-
-        (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote srs-designator) "[[:space:]]*\\(" srs--id-regexp "\\)\\s-*") nil t)
-          (let* ((file (match-string 1))
-                 (line (string-to-number (match-string 2)))
-                 (id (match-string 3)))
-            (push (list file
-                        line
-                        id)
-                  results)))))
-    (nreverse results)))
-
-(defun srs--search-ripgrep ()
-  "Use ripgrep to find flashcard locations."
-  (let ((files (srs--card-file-paths))
-        (results))
-    (when files
-      (with-temp-buffer
-        (apply #'call-process "rg" nil t nil
-               "--with-filename" "-n" "-e" srs-designator
-               files)
-        (goto-char (point-min))
-        (thing-at-point 'number)
-
-        (while (re-search-forward (concat "^\\([^:]+\\):\\([^:]+\\):.*" (regexp-quote srs-designator) "[[:space:]]*\\(" srs--id-regexp "\\)\\s-*") nil t)
+        (while (re-search-forward
+                (concat "^\\(.+?\\):\\([0-9]+\\):.*"
+                        (regexp-quote srs-designator)
+                        "[[:space:]]*\\(" srs--id-regexp "\\)\\s-*")
+                nil t)
           (let* ((file (match-string 1))
                  (line (string-to-number (match-string 2)))
                  (id (match-string 3)))
@@ -853,7 +830,7 @@ Uses native Emacs search through files."
                                  (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
                                    (time-less-p (encode-time (parse-time-string next-review-deadline-str))
                                                 (current-time)))))
-                       (move-end-of-line 1)
+                       (end-of-line 1)
                        (push (append (list id file line saved-major-mode)
                                      (srs--parse-question-or-cloze-str-at-point))
                              results)))))))))))))
