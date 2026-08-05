@@ -3,8 +3,8 @@
 ;; Author: Duncan Britt <duncanbritt.com>
 ;; Contact: https://github.com/Duncan-Britt/srs.el/issues
 ;; URL: https://github.com/Duncan-Britt/srs.el
-;; Version: 1.0.3
-;; Package-Requires: ((emacs "30.2") (transient "0.12.0"))
+;; Version: 1.1.0
+;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: hypermedia, srs, memory
 
 ;; This file is NOT part of GNU Emacs.
@@ -158,9 +158,47 @@
 ;; https://github.com/eudoxia0/hashcards
 
 ;;; Code:
-(require 'transient)
+(when (>= emacs-major-version 30)
+  (require 'transient nil :noerror))
 (require 'org-id)
 (require 'org)
+(require 'seq)
+(require 'subr-x)
+(require 'compile)
+(require 'parse-time)
+
+;; Declarations to silence the byte-compiler on Emacs < 30,
+;; where transient is not required.
+(defvar transient-current-prefix)
+(defvar transient-current-command)
+(declare-function transient-args "transient" (prefix))
+(declare-function transient-arg-value "transient" (arg args))
+
+(defun srs--filter-by-tags-p (prfx-arg)
+  "Return non-nil if flashcards should be filtered by tags.
+True when PRFX-ARG is non-nil, or when invoked from `srs-menu'
+with the `--filter' option enabled."
+  (if (and (bound-and-true-p transient-current-prefix)
+           (fboundp 'transient-args)
+           (fboundp 'transient-arg-value))
+      (transient-arg-value "--filter" (transient-args transient-current-command))
+    prfx-arg))
+
+;; ┌──────────┐
+;; │ Polyfill │
+;; └──────────┘
+(defun srs--string-replace (from-string to-string in-string)
+  "Compatibility wrapper for `string-replace'.
+Replace all occurrences of FROM-STRING with TO-STRING in IN-STRING.
+Matching is literal and case-sensitive."
+  (if (fboundp 'string-replace)
+      (string-replace from-string to-string in-string)
+    ;; else polyfill
+    (replace-regexp-in-string
+     (regexp-quote from-string)
+     to-string
+     in-string
+     t t)))
 
 ;; ┌────────┐
 ;; │ Custom │
@@ -439,50 +477,42 @@ before question, and inserts flashcard into persistant storage."
 
 (defun srs-review (&optional prfx-arg)
   "Review flashcards which are due.
-When FILTER-BY-TAGS-P is non nil, such as when invoked with a
-PRFX-ARG, prompt the user for tags by which to filter the flashcards."
+When FILTER-BY-TAGS-P is non nil, such as when invoked with a PRFX-ARG,
+prompt the user for tags by which to filter the flashcards."
   (interactive "P")
   (setq srs--review-states-history nil)
-  (let ((filter-by-tags-p (if transient-current-prefix
-                              (let ((args (transient-args transient-current-command)))
-                                (transient-arg-value "--filter" args))
-                            prfx-arg)))
-    (setq srs--is-cramming nil)
-    (setq srs--window-config-before-review (current-window-configuration))
-    (let ((tags)
-          (any-or-all-case))
-      (when filter-by-tags-p
-        (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
-          (setq tags x)
-          (setq any-or-all-case y)))
-      (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
-      (if srs--review-queue
-          (srs--review-next-card)
-        (message "No flashcards due today")))))
+  (setq srs--is-cramming nil)
+  (setq srs--window-config-before-review (current-window-configuration))
+  (let ((tags)
+        (any-or-all-case))
+    (when (srs--filter-by-tags-p prfx-arg)
+      (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
+        (setq tags x)
+        (setq any-or-all-case y)))
+    (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
+    (if srs--review-queue
+        (srs--review-next-card)
+      (message "No flashcards due today"))))
 
-(transient-define-suffix srs-cram (&optional prfx-arg)
+(defun srs-cram (&optional prfx-arg)
   "Cram flashcards.
-Like `srs-review', but doesn't update flashcard review history.  When
-FILTER-BY-TAGS-P is non nil, such as when invoked with a prefix
-arugment, prompt the user for tags by which to filter the flashcards."
+Like `srs-review', but doesn't update flashcard review history.  With a
+prefix argument PRFX-ARG, or when the `--filter' option is enabled in
+`srs-menu', prompt the user for tags by which to filter the flashcards."
   (interactive "P")
   (setq srs--review-states-history nil)
-  (let ((filter-by-tags-p (if transient-current-prefix
-                              (let ((args (transient-args transient-current-command)))
-                                (transient-arg-value "--filter" args))
-                            prfx-arg)))
-    (setq srs--is-cramming t)
-    (setq srs--window-config-before-review (current-window-configuration))
-    (let ((tags)
-          (any-or-all-case))
-      (when filter-by-tags-p
-        (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
-          (setq tags x)
-          (setq any-or-all-case y)))
-      (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
-      (if srs--review-queue
-          (srs--review-next-card)
-        (message "Found 0 flashcards")))))
+  (setq srs--is-cramming t)
+  (setq srs--window-config-before-review (current-window-configuration))
+  (let ((tags)
+        (any-or-all-case))
+    (when (srs--filter-by-tags-p prfx-arg)
+      (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
+        (setq tags x)
+        (setq any-or-all-case y)))
+    (setq srs--review-queue (srs--due-for-review tags any-or-all-case))
+    (if srs--review-queue
+        (srs--review-next-card)
+      (message "Found 0 flashcards"))))
 
 (defun srs--prompt-read-tags ()
   "Prompt the user for tags and return selection."
@@ -522,9 +552,9 @@ arugment, prompt the user for tags by which to filter the flashcards."
             (dolist (card cards)
               (pcase-exhaustive card
                 (`(,_ ,file ,line ,__ question ,question ,___)
-                 (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " question))))
+                 (insert (format "%s:%d: %s\n" file line (srs--string-replace "\n" "⮐ " question))))
                 (`(,_ ,file ,line ,__ cloze ,cloze-str)
-                 (insert (format "%s:%d: %s\n" file line (string-replace "\n" "⮐ " (srs--format-cloze cloze-str 'hide))))))))
+                 (insert (format "%s:%d: %s\n" file line (srs--string-replace "\n" "⮐ " (srs--format-cloze cloze-str 'hide))))))))
           (srs-browse-mode)
           ;; Set after the mode call, since changing major mode kills local variables.
           (setq srs--browse-tags tags
@@ -533,19 +563,15 @@ arugment, prompt the user for tags by which to filter the flashcards."
           (pop-to-buffer (current-buffer)))
       (message "No flashcards found"))))
 
-(transient-define-suffix srs-browse (&optional prfx-arg)
+(defun srs-browse (&optional prfx-arg)
   "Browse all flashcards in an occur-like buffer.
-FILTER-BY-TAGS-P, (which can be set to non-NIL by using the prefix
-argument when called interactively), when non-NIL, will prompt the user
-for tags by which to filter the results."
+With a prefix argument PRFX-ARG, or when the `--filter' option is
+enabled in `srs-menu', prompt the user for tags by which to filter the
+results."
   (interactive "P")
-  (let ((filter-by-tags-p (if transient-current-prefix
-                              (let ((args (transient-args transient-current-command)))
-                                (transient-arg-value "--filter" args))
-                            prfx-arg))
-        (tags)
+  (let ((tags)
         (any-or-all-case))
-    (when filter-by-tags-p
+    (when (srs--filter-by-tags-p prfx-arg)
       (pcase-let ((`(,x ,y) (srs--prompt-read-tags)))
         (setq tags x)
         (setq any-or-all-case y)))
@@ -640,19 +666,21 @@ TYPE is either `HIDE' or `REVEAL'."
   (kill-buffer "*srs*")
   (set-window-configuration srs--window-config-before-review))
 
-(transient-define-prefix srs-menu ()
-  "Transient menu for srs.el."
-  :refresh-suffixes t
-  [["Review"
-    ("r" "Review due cards" srs-review)
-    ("c" "Cram cards" srs-cram)]
-   ["Edit"
-    ("m" "Make flashcard at point" srs-card-make-at-point)
-    ("d" "Delete flashcard at point" srs-card-delete-at-point)
-    ("t" "Edit tags for flashcard at point" srs-card-edit-tags)
-    ("b" "Browse flashcards" srs-browse)]]
-  ["Options"
-   ("-f" "Filter by tag(s)" "--filter")])
+(when (and (>= emacs-major-version 30)
+           (fboundp 'transient-define-prefix))
+  (eval '(transient-define-prefix srs-menu ()
+           "Transient menu for srs.el."
+           :refresh-suffixes t
+           [["Review"
+             ("r" "Review due cards" srs-review)
+             ("c" "Cram cards" srs-cram)]
+            ["Edit"
+             ("m" "Make flashcard at point" srs-card-make-at-point)
+             ("d" "Delete flashcard at point" srs-card-delete-at-point)
+             ("t" "Edit tags for flashcard at point" srs-card-edit-tags)
+             ("b" "Browse flashcards" srs-browse)]]
+           ["Options"
+            ("-f" "Filter by tag(s)" "--filter")])))
 
 (defun srs--update-review-history (id grade)
   "Update review history of card with ID.
@@ -702,9 +730,10 @@ FSRS algorithm."
 
 (defun srs--days-since-timestamp (timestamp)
   "Days (float) since TIMESTAMP."
-  (let ((time (encode-time (parse-time-string timestamp))))
+  (let ((time (parse-iso8601-time-string timestamp)))
     (/ (float-time (time-subtract (current-time) time))
        86400.0)))
+
 
 (defun srs--time-add-days (time days)
   "Add DAYS (a decimal number) to TIME."
@@ -747,7 +776,7 @@ tags are provided."
                          (org-mode)
                          (insert-file-contents history-file)
                          (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
-                           (time-less-p (encode-time (parse-time-string next-review-deadline-str))
+                           (time-less-p (parse-iso8601-time-string next-review-deadline-str)
                                         (current-time)))))
                (with-temp-buffer
                  (insert-file-contents file)
@@ -828,7 +857,7 @@ Uses native Emacs search through files."
                                (with-current-buffer (find-file-noselect history-file)
                                  (org-mode)
                                  (let ((next-review-deadline-str (org-entry-get position "next-review-deadline")))
-                                   (time-less-p (encode-time (parse-time-string next-review-deadline-str))
+                                   (time-less-p (parse-iso8601-time-string next-review-deadline-str)
                                                 (current-time)))))
                        (end-of-line 1)
                        (push (append (list id file line saved-major-mode)
@@ -963,7 +992,8 @@ Look ahead to find question beginning at nearest nonwhitespace character."
       ('cram-answer (srs-cram-answer-mode 1)))))
 
 (defun srs--render-buffer (&optional render-tags-p)
-  "Render the *srs* buffer based on current state."
+  "Render the *srs* buffer based on current state.
+If RENDER-TAGS-P is non-NIL, display tags of card."
   (let ((inhibit-read-only t))
     (erase-buffer)
     (srs--insert-keybindings)
