@@ -73,7 +73,7 @@
 ;; │ ...whatever comes before                            │
 ;; │                                                     │
 ;; │ FC: 4D55B42A-1389-45CF-B242-E8EBFE7E0784            │
-;; │ The {{mitochondria}} is the powerhouse of the cell.  │
+;; │ The {{mitochondria}} is the powerhouse of the cell. │
 ;; │                                                     │
 ;; │ rest of the file...                                 │
 ;; └─────────────────────────────────────────────────────┘
