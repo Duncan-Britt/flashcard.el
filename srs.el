@@ -303,6 +303,7 @@ https://github.com/gggion/org-transclusion-blocks/blob/2d02aa84c45a731959327da79
                                 ov)))
         (overlay-put ov 'srs-timer timer)))))
 
+;;;###autoload
 (defun srs-card-make-at-point ()
   "Make flashcard starting from paragraph(s) at point.
 
@@ -341,6 +342,7 @@ before question, and inserts flashcard into persistant storage."
                        (format "Created flashcard in file not found among `srs-path-list'.\nUse (add-to-list 'srs-path-list \"%s\")" buffer-file-name)
                        :warning))))
 
+;;;###autoload
 (defun srs-card-edit-tags ()
   "Edit tags of flashcard at point."
   (interactive)
@@ -435,6 +437,7 @@ before question, and inserts flashcard into persistant storage."
                          (puthash tag t tags))))))))))))
     (hash-table-keys tags)))
 
+;;;###autoload
 (defun srs-card-delete-at-point ()
   "Delete flashcard at point from file and `srs-history-file'."
   (interactive)
@@ -475,6 +478,7 @@ before question, and inserts flashcard into persistant storage."
         ;; else
         (user-error "No flashcard %s <ID> on this line" srs-designator)))))
 
+;;;###autoload
 (defun srs-review (&optional prfx-arg)
   "Review flashcards which are due.
 When FILTER-BY-TAGS-P is non nil, such as when invoked with a PRFX-ARG,
@@ -494,6 +498,7 @@ prompt the user for tags by which to filter the flashcards."
         (srs--review-next-card)
       (message "No flashcards due today"))))
 
+;;;###autoload
 (defun srs-cram (&optional prfx-arg)
   "Cram flashcards.
 Like `srs-review', but doesn't update flashcard review history.  With a
@@ -563,6 +568,7 @@ prefix argument PRFX-ARG, or when the `--filter' option is enabled in
           (pop-to-buffer (current-buffer)))
       (message "No flashcards found"))))
 
+;;;###autoload
 (defun srs-browse (&optional prfx-arg)
   "Browse all flashcards in an occur-like buffer.
 With a prefix argument PRFX-ARG, or when the `--filter' option is
@@ -666,6 +672,7 @@ TYPE is either `HIDE' or `REVEAL'."
   (kill-buffer "*srs*")
   (set-window-configuration srs--window-config-before-review))
 
+;;;###autoload (autoload 'srs-menu "srs" "Transient menu for srs.el." nil t)
 (when (and (>= emacs-major-version 30)
            (fboundp 'transient-define-prefix))
   (eval '(transient-define-prefix srs-menu ()
